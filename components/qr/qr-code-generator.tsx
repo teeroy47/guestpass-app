@@ -99,7 +99,7 @@ export function QRCodeGenerator() {
     setGenerating(true)
 
     try {
-      const response = await fetch("http://localhost:4000/api/generate-bundle", {
+      const response = await fetch("/api/generate-bundle", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -139,7 +139,7 @@ export function QRCodeGenerator() {
     setGenerating(true)
 
     try {
-      const response = await fetch("http://localhost:4000/api/generate-bundle", {
+      const response = await fetch("/api/generate-bundle", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",

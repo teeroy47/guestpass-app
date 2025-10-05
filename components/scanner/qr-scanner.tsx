@@ -217,6 +217,19 @@ export function QRScanner({ eventId, onClose }: QRScannerProps) {
       const video = videoRef.current
       if (video) {
         video.srcObject = stream
+        
+        // Wait for video metadata to load
+        await new Promise<void>((resolve, reject) => {
+          video.onloadedmetadata = () => {
+            resolve()
+          }
+          video.onerror = () => {
+            reject(new Error("Failed to load video metadata"))
+          }
+          // Timeout after 5 seconds
+          setTimeout(() => reject(new Error("Video load timeout")), 5000)
+        })
+        
         try {
           await video.play()
         } catch (playError) {
@@ -299,13 +312,20 @@ export function QRScanner({ eventId, onClose }: QRScannerProps) {
       </div>
 
       {/* Scanner Area */}
-      <div className="flex-1 relative">
+      <div className="flex-1 relative overflow-hidden bg-black">
         {isScanning ? (
           <>
-            <video ref={videoRef} autoPlay playsInline muted className="w-full h-full object-cover" />
+            <video 
+              ref={videoRef} 
+              autoPlay 
+              playsInline 
+              muted 
+              className="absolute inset-0 w-full h-full object-cover"
+              style={{ display: 'block' }}
+            />
 
             {/* Scanning Overlay */}
-            <div className="absolute inset-0 flex items-center justify-center">
+            <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
               <div className="w-64 h-64 border-2 border-white/80 rounded-lg relative">
                 <div className="absolute top-0 left-0 w-8 h-8 border-t-4 border-l-4 border-primary rounded-tl-lg"></div>
                 <div className="absolute top-0 right-0 w-8 h-8 border-t-4 border-r-4 border-primary rounded-tr-lg"></div>
@@ -315,7 +335,7 @@ export function QRScanner({ eventId, onClose }: QRScannerProps) {
             </div>
 
             {/* Controls */}
-            <div className="absolute bottom-6 left-1/2 transform -translate-x-1/2 flex gap-3">
+            <div className="absolute bottom-6 left-1/2 transform -translate-x-1/2 flex gap-3 pointer-events-auto z-10">
               <Button variant="outline" size="lg" onClick={toggleTorch} className="bg-black/60 border-white/20 text-white">
                 {torchEnabled ? <FlashlightOff className="mr-2 h-5 w-5" /> : <Flashlight className="mr-2 h-5 w-5" />}
                 <span>{torchEnabled ? "Torch Off" : "Torch On"}</span>
@@ -327,14 +347,14 @@ export function QRScanner({ eventId, onClose }: QRScannerProps) {
             </div>
 
             {scannerError && (
-              <div className="absolute bottom-24 left-1/2 transform -translate-x-1/2 bg-red-500/80 text-white px-4 py-2 rounded-lg shadow-lg flex items-center gap-2">
+              <div className="absolute bottom-24 left-1/2 transform -translate-x-1/2 bg-red-500/80 text-white px-4 py-2 rounded-lg shadow-lg flex items-center gap-2 pointer-events-auto z-10">
                 <AlertCircle className="h-4 w-4" />
                 <span className="text-sm font-medium">{scannerError}</span>
               </div>
             )}
 
             {lastScanResult && (
-              <Card className="absolute bottom-36 left-1/2 transform -translate-x-1/2 w-80 max-w-[90%] bg-black/80 border-white/10 text-white">
+              <Card className="absolute bottom-36 left-1/2 transform -translate-x-1/2 w-80 max-w-[90%] bg-black/80 border-white/10 text-white pointer-events-auto z-10">
                 <CardContent className="p-4 flex gap-3 items-start">
                   {lastScanResult.type === "success" ? (
                     <CheckCircle className="h-6 w-6 text-emerald-400 shrink-0" />
