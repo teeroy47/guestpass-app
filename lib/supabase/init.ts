@@ -1,0 +1,1 @@
+import "@supabase/auth-helpers-nextjs/clients"
