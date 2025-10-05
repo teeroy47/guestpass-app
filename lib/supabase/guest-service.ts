@@ -1,4 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js"
+import { createBrowserSupabaseClient } from "./browser"
 import type { SupabaseGuestRow } from "./types"
 
 export interface SupabaseCreateGuestInput {
@@ -22,20 +23,7 @@ export class SupabaseGuestService {
     }
 
     if (!this.browserClientPromise) {
-      this.browserClientPromise = import("@supabase/supabase-js").then(({ createClient }) => {
-        const supabaseUrl = import.meta.env.VITE_SUPABASE_URL ?? import.meta.env.NEXT_PUBLIC_SUPABASE_URL
-        const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY ?? import.meta.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
-
-        if (!supabaseUrl) {
-          throw new Error("Missing VITE_SUPABASE_URL or NEXT_PUBLIC_SUPABASE_URL environment variable")
-        }
-
-        if (!supabaseAnonKey) {
-          throw new Error("Missing VITE_SUPABASE_ANON_KEY or NEXT_PUBLIC_SUPABASE_ANON_KEY environment variable")
-        }
-
-        return createClient(supabaseUrl, supabaseAnonKey)
-      })
+      this.browserClientPromise = Promise.resolve(createBrowserSupabaseClient())
     }
 
     return this.browserClientPromise
