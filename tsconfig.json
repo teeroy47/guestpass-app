@@ -5,9 +5,9 @@
       "dom.iterable",
       "esnext"
     ],
-    "allowJs": true,
-    "target": "ES6",
-    "skipLibCheck": true,
+    "allowJs": false,
+    "target": "ES2022",
+    "skipLibCheck": false,
     "strict": true,
     "noEmit": true,
     "esModuleInterop": true,
@@ -17,6 +17,9 @@
     "isolatedModules": true,
     "jsx": "preserve",
     "incremental": true,
+    "types": [
+      "node"
+    ],
     "paths": {
       "@/*": [
         "./*"
@@ -29,7 +32,6 @@
     ]
   },
   "include": [
-    "src",
     "app",
     "components",
     "lib",
@@ -41,6 +43,8 @@
     ".next/types/**/*.ts"
   ],
   "exclude": [
+    "src",
+    "dist",
     "node_modules"
   ]
 }
