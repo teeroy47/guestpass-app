@@ -3,9 +3,12 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "next dev",
-    "build": "next build",
-    "start": "next start",
+    "dev": "concurrently \"vite\" \"npm run server\"",
+    "dev:client": "vite",
+    "server": "node server/index.mjs",
+    "build": "vite build",
+    "preview": "vite preview",
+    "start": "concurrently \"vite preview --port 5173\" \"npm run server\"",
     "lint": "next lint"
   },
   "dependencies": {

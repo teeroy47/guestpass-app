@@ -64,6 +64,18 @@ export function EventsProvider({ children }: { children: ReactNode }) {
 
   const createEvent = async (eventData: Omit<Event, "id" | "createdAt">) => {
     try {
+      // Check for duplicate event (same title, venue, and start time)
+      const duplicate = events.find(
+        (e) =>
+          e.title.toLowerCase() === eventData.title.toLowerCase() &&
+          e.venue?.toLowerCase() === eventData.venue?.toLowerCase() &&
+          new Date(e.startsAt).getTime() === new Date(eventData.startsAt).getTime()
+      )
+
+      if (duplicate) {
+        throw new Error("An event with the same title, venue, and start time already exists.")
+      }
+
       const payload: CreateEventInput = {
         title: eventData.title,
         description: eventData.description,

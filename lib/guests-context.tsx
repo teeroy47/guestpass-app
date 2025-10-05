@@ -29,6 +29,7 @@ interface GuestsContextType {
   }[]>
   updateGuest: (id: string, updates: Partial<Guest>) => Promise<void>
   deleteGuest: (id: string) => Promise<void>
+  deleteGuestsBulk: (ids: string[]) => Promise<void>
   checkInGuest: (
     eventId: string,
     uniqueCode: string,
@@ -85,6 +86,18 @@ export function GuestsProvider({ children }: { children: ReactNode }) {
 
   const addGuest = async (guestData: Omit<Guest, "id" | "createdAt" | "checkedIn" | "uniqueCode">) => {
     try {
+      // Check for duplicate guest (same name and email for the same event)
+      const duplicate = guests.find(
+        (g) =>
+          g.eventId === guestData.eventId &&
+          g.name.toLowerCase() === guestData.name.toLowerCase() &&
+          (guestData.email ? g.email?.toLowerCase() === guestData.email.toLowerCase() : !g.email)
+      )
+
+      if (duplicate) {
+        throw new Error("A guest with the same name and email already exists for this event.")
+      }
+
       const created = await GuestService.createGuest({
         eventId: guestData.eventId,
         name: guestData.name,
@@ -108,7 +121,7 @@ export function GuestsProvider({ children }: { children: ReactNode }) {
       return guest
     } catch (error) {
       console.error("Failed to create guest", error)
-      return null
+      throw error
     }
   }
 
@@ -119,10 +132,28 @@ export function GuestsProvider({ children }: { children: ReactNode }) {
       const eventId = guestsData[0]?.eventId
       if (!eventId) return []
 
-      const created = await GuestService.createGuestsBulk(eventId, guestsData)
+      // Filter out duplicates before sending to the server
+      const existingGuests = guests.filter((g) => g.eventId === eventId)
+      const uniqueGuests = guestsData.filter((newGuest) => {
+        return !existingGuests.some(
+          (existing) =>
+            existing.name.toLowerCase() === newGuest.name.toLowerCase() &&
+            (newGuest.email ? existing.email?.toLowerCase() === newGuest.email.toLowerCase() : !existing.email)
+        )
+      })
+
+      if (uniqueGuests.length === 0) {
+        throw new Error("All guests already exist for this event.")
+      }
+
+      if (uniqueGuests.length < guestsData.length) {
+        console.warn(`Skipped ${guestsData.length - uniqueGuests.length} duplicate guests`)
+      }
+
+      const created = await GuestService.createGuestsBulk(eventId, uniqueGuests)
 
       const newGuests: Guest[] = created.map((item) => {
-        const source = guestsData.find((guest) => guest.name === item.name && guest.email === item.email)
+        const source = uniqueGuests.find((guest) => guest.name === item.name && guest.email === item.email)
         return {
           id: item.id,
           eventId,
@@ -139,7 +170,7 @@ export function GuestsProvider({ children }: { children: ReactNode }) {
       return created
     } catch (error) {
       console.error("Failed to create guests bulk", error)
-      return []
+      throw error
     }
   }
 
@@ -172,6 +203,19 @@ export function GuestsProvider({ children }: { children: ReactNode }) {
       await refreshEvents()
     } catch (error) {
       console.error("Failed to delete guest", error)
+      throw error
+    }
+  }
+
+  const deleteGuestsBulk = async (ids: string[]) => {
+    try {
+      // Delete all guests in parallel
+      await Promise.all(ids.map((id) => GuestService.deleteGuest(id)))
+      setGuests((prev) => prev.filter((guest) => !ids.includes(guest.id)))
+      await refreshEvents()
+    } catch (error) {
+      console.error("Failed to delete guests in bulk", error)
+      throw error
     }
   }
 
@@ -210,6 +254,7 @@ export function GuestsProvider({ children }: { children: ReactNode }) {
     addGuestsBulk,
     updateGuest,
     deleteGuest,
+    deleteGuestsBulk,
     checkInGuest,
   }
 

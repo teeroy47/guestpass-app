@@ -8,6 +8,8 @@ import { Badge } from "@/components/ui/badge"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
+import { Checkbox } from "@/components/ui/checkbox"
+import { useToast } from "@/components/ui/use-toast"
 import { useEvents } from "@/lib/events-context"
 import { useGuests } from "@/lib/guests-context"
 import { useAuth } from "@/lib/auth-context"
@@ -15,12 +17,14 @@ import { Search, MoreHorizontal, Download, Users, CheckCircle, Clock, Trash2 } f
 
 export function GuestList() {
   const { events } = useEvents()
-  const { guests, deleteGuest } = useGuests()
+  const { guests, deleteGuest, deleteGuestsBulk } = useGuests()
   const { user } = useAuth()
+  const { toast } = useToast()
   const role = (user?.app_metadata?.role ?? "usher") as "admin" | "usher"
   const [selectedEventId, setSelectedEventId] = useState<string>("")
   const [searchTerm, setSearchTerm] = useState("")
   const [statusFilter, setStatusFilter] = useState<string>("all")
+  const [selectedGuestIds, setSelectedGuestIds] = useState<Set<string>>(new Set())
 
   const isAdmin = role === "admin"
 
@@ -66,7 +70,69 @@ export function GuestList() {
 
   const handleDeleteGuest = async (guestId: string) => {
     if (confirm("Are you sure you want to delete this guest? This action cannot be undone.")) {
-      await deleteGuest(guestId)
+      try {
+        await deleteGuest(guestId)
+        toast({
+          title: "Guest deleted",
+          description: "The guest has been removed successfully.",
+        })
+        setSelectedGuestIds((prev) => {
+          const newSet = new Set(prev)
+          newSet.delete(guestId)
+          return newSet
+        })
+      } catch (error) {
+        toast({
+          title: "Delete failed",
+          description: "Failed to delete the guest. Please try again.",
+          variant: "destructive",
+        })
+      }
+    }
+  }
+
+  const handleBulkDelete = async () => {
+    if (selectedGuestIds.size === 0) return
+
+    if (
+      confirm(
+        `Are you sure you want to delete ${selectedGuestIds.size} guest(s)? This action cannot be undone.`
+      )
+    ) {
+      try {
+        await deleteGuestsBulk(Array.from(selectedGuestIds))
+        toast({
+          title: "Guests deleted",
+          description: `${selectedGuestIds.size} guest(s) have been removed successfully.`,
+        })
+        setSelectedGuestIds(new Set())
+      } catch (error) {
+        toast({
+          title: "Bulk delete failed",
+          description: "Failed to delete some guests. Please try again.",
+          variant: "destructive",
+        })
+      }
+    }
+  }
+
+  const toggleGuestSelection = (guestId: string) => {
+    setSelectedGuestIds((prev) => {
+      const newSet = new Set(prev)
+      if (newSet.has(guestId)) {
+        newSet.delete(guestId)
+      } else {
+        newSet.add(guestId)
+      }
+      return newSet
+    })
+  }
+
+  const toggleSelectAll = () => {
+    if (selectedGuestIds.size === filteredGuests.length) {
+      setSelectedGuestIds(new Set())
+    } else {
+      setSelectedGuestIds(new Set(filteredGuests.map((g) => g.id)))
     }
   }
 
@@ -176,11 +242,24 @@ export function GuestList() {
                 <CardTitle className="flex items-center">
                   <Users className="mr-2 h-5 w-5" />
                   Guest List ({filteredGuests.length})
+                  {selectedGuestIds.size > 0 && (
+                    <Badge variant="secondary" className="ml-2">
+                      {selectedGuestIds.size} selected
+                    </Badge>
+                  )}
                 </CardTitle>
-                <Button onClick={exportGuestList} variant="outline" size="sm">
-                  <Download className="mr-2 h-4 w-4" />
-                  Export CSV
-                </Button>
+                <div className="flex gap-2">
+                  {isAdmin && selectedGuestIds.size > 0 && (
+                    <Button onClick={handleBulkDelete} variant="destructive" size="sm">
+                      <Trash2 className="mr-2 h-4 w-4" />
+                      Delete Selected ({selectedGuestIds.size})
+                    </Button>
+                  )}
+                  <Button onClick={exportGuestList} variant="outline" size="sm">
+                    <Download className="mr-2 h-4 w-4" />
+                    Export CSV
+                  </Button>
+                </div>
               </div>
             </CardHeader>
             <CardContent className="space-y-4">
@@ -222,6 +301,15 @@ export function GuestList() {
                   <Table>
                     <TableHeader>
                       <TableRow>
+                        {isAdmin && (
+                          <TableHead className="w-[50px]">
+                            <Checkbox
+                              checked={selectedGuestIds.size === filteredGuests.length && filteredGuests.length > 0}
+                              onCheckedChange={toggleSelectAll}
+                              aria-label="Select all guests"
+                            />
+                          </TableHead>
+                        )}
                         <TableHead>Name</TableHead>
                         <TableHead>Email</TableHead>
                         <TableHead>Code</TableHead>
@@ -233,6 +321,15 @@ export function GuestList() {
                     <TableBody>
                       {filteredGuests.map((guest) => (
                         <TableRow key={guest.id}>
+                          {isAdmin && (
+                            <TableCell>
+                              <Checkbox
+                                checked={selectedGuestIds.has(guest.id)}
+                                onCheckedChange={() => toggleGuestSelection(guest.id)}
+                                aria-label={`Select ${guest.name}`}
+                              />
+                            </TableCell>
+                          )}
                           <TableCell className="font-medium">{guest.name}</TableCell>
                           <TableCell className="text-muted-foreground">{guest.email || "—"}</TableCell>
                           <TableCell className="font-mono text-sm">{guest.uniqueCode}</TableCell>
@@ -246,22 +343,14 @@ export function GuestList() {
                           </TableCell>
                           {isAdmin && (
                             <TableCell>
-                              <DropdownMenu>
-                                <DropdownMenuTrigger asChild>
-                                  <Button variant="ghost" size="sm">
-                                    <MoreHorizontal className="h-4 w-4" />
-                                  </Button>
-                                </DropdownMenuTrigger>
-                                <DropdownMenuContent align="end">
-                                  <DropdownMenuItem
-                                    onClick={() => handleDeleteGuest(guest.id)}
-                                    className="text-destructive"
-                                  >
-                                    <Trash2 className="mr-2 h-4 w-4" />
-                                    Delete Guest
-                                  </DropdownMenuItem>
-                                </DropdownMenuContent>
-                              </DropdownMenu>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => handleDeleteGuest(guest.id)}
+                                className="text-destructive hover:text-destructive"
+                              >
+                                <Trash2 className="h-4 w-4" />
+                              </Button>
                             </TableCell>
                           )}
                         </TableRow>
