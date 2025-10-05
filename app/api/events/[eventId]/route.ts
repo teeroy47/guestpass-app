@@ -1,13 +1,8 @@
+import type { NextRequest } from "next/server"
 import { NextResponse } from "next/server"
 import { EventService } from "@/lib/event-service"
 
-type EventRouteParams = {
-  params: {
-    eventId: string
-  }
-}
-
-export async function GET(_request: Request, { params }: EventRouteParams) {
+export async function GET(_request: NextRequest, { params }: { params: { eventId: string } }) {
   const { eventId } = params
   try {
     const event = await EventService.getEvent(eventId)
@@ -23,7 +18,7 @@ export async function GET(_request: Request, { params }: EventRouteParams) {
   }
 }
 
-export async function PATCH(request: Request, { params }: EventRouteParams) {
+export async function PATCH(request: NextRequest, { params }: { params: { eventId: string } }) {
   const { eventId } = params
   try {
     const payload = await request.json()
@@ -40,7 +35,7 @@ export async function PATCH(request: Request, { params }: EventRouteParams) {
   }
 }
 
-export async function DELETE(_request: Request, { params }: EventRouteParams) {
+export async function DELETE(_request: NextRequest, { params }: { params: { eventId: string } }) {
   const { eventId } = params
   try {
     await EventService.deleteEvent(eventId)
