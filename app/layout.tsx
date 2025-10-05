@@ -8,7 +8,6 @@ import { GuestsProvider } from "@/lib/guests-context"
 import { AuthProvider } from "@/lib/auth-context"
 import { Toaster } from "@/components/ui/toaster"
 import { Suspense } from "react"
-import "@/lib/supabase/init"
 import "./globals.css"
 
 export const metadata: Metadata = {
