@@ -54,6 +54,7 @@
     "embla-carousel-react": "8.5.1",
     "express": "^4.18.2",
     "geist": "latest",
+    "html5-qrcode": "^2.3.8",
     "input-otp": "1.4.1",
     "jszi": "^0.0.1-security.0",
     "jszip": "^3.10.1",
