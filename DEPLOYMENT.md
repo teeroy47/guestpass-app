@@ -36,6 +36,19 @@ PORT=4000
 3. Go to Settings → API
 4. Copy the "Project URL" and "anon/public" key
 
+### Configuring Email Redirects
+
+**Important**: Configure your Supabase authentication URLs to ensure email confirmation links point to your production domain:
+
+1. Go to [Supabase Dashboard](https://app.supabase.com)
+2. Select your project
+3. Go to **Authentication** → **URL Configuration**
+4. Set **Site URL** to your production domain (e.g., `https://yourdomain.com`)
+5. Add your production domain to **Redirect URLs** list
+6. For development, also add `http://localhost:5173` to **Redirect URLs**
+
+The app automatically uses `window.location.origin` for email redirects, so it will work correctly in both development and production environments.
+
 ## 🗄️ Database Setup
 
 ### Supabase Schema
@@ -455,6 +468,25 @@ curl https://your-domain.com/api/health
 
 ### Issue: Duplicate Prevention Not Working
 **Solution**: The app now prevents duplicates at the application level. If you still see duplicates, clear your browser cache and refresh.
+
+### Issue: Email Confirmation Links Point to Localhost
+**Solution**: 
+1. The app now automatically uses `window.location.origin` for email redirects
+2. Ensure your Supabase **Site URL** is set to your production domain:
+   - Go to Supabase Dashboard → Authentication → URL Configuration
+   - Set Site URL to `https://yourdomain.com`
+   - Add your production domain to Redirect URLs
+3. Redeploy your application after making these changes
+4. For users who received old emails with localhost links:
+   - They can use "Forgot Password" to get a new email with correct links
+   - Or manually resend confirmation from Supabase Dashboard → Authentication → Users
+
+### Issue: Session Not Persisting After Page Reload
+**Solution**: 
+- The app now includes session persistence configuration
+- Sessions are stored in localStorage with auto token refresh
+- Users stay logged in across page reloads and browser restarts
+- Check browser console for auth-related logs if issues persist
 
 ## 🔐 Security Best Practices
 

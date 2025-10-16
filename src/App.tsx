@@ -6,6 +6,7 @@ import { EventList } from "@/components/events/event-list"
 import { GuestList } from "@/components/guests/guest-list"
 import { LoginForm } from "@/components/auth/login-form"
 import { useAuth } from "@/lib/auth-context"
+import { Toaster } from "@/components/ui/toaster"
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { user, loading } = useAuth()
@@ -13,8 +14,11 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center">
-        <span className="text-sm text-muted-foreground">Checking authentication...</span>
+      <div className="min-h-screen flex items-center justify-center bg-background">
+        <div className="text-center space-y-4">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mx-auto"></div>
+          <p className="text-sm text-muted-foreground">Loading your session...</p>
+        </div>
       </div>
     )
   }
@@ -103,6 +107,7 @@ export default function App() {
           <Route path="*" element={<div>Page not found</div>} />
         </Routes>
       </main>
+      <Toaster />
     </div>
   )
 }

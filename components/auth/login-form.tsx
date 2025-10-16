@@ -2,6 +2,7 @@
 
 import { useCallback, useMemo, useState } from "react"
 import { useForm } from "react-hook-form"
+import { useNavigate } from "react-router-dom"
 import { z } from "zod"
 import { zodResolver } from "@hookform/resolvers/zod"
 import { Button } from "@/components/ui/button"
@@ -10,7 +11,7 @@ import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "
 import { Input } from "@/components/ui/input"
 import { useToast } from "@/hooks/use-toast"
 import { useAuth } from "@/lib/auth-context"
-import { QrCode, Users, Shield, Loader2, Mail, Lock } from "lucide-react"
+import { QrCode, Users, Shield, Loader2, Mail, Lock, User } from "lucide-react"
 
 const formSchema = z
   .object({
@@ -23,6 +24,7 @@ const formSchema = z
       .min(8, { message: "Password must be at least 8 characters" })
       .max(64, { message: "Password must be 64 characters or fewer" }),
     confirmPassword: z.string().optional(),
+    displayName: z.string().optional(),
   })
 
 type FormValues = z.infer<typeof formSchema>
@@ -30,6 +32,7 @@ type FormValues = z.infer<typeof formSchema>
 export function LoginForm() {
   const { signInWithPassword, signUpWithPassword, refreshUser, loading } = useAuth()
   const { toast } = useToast()
+  const navigate = useNavigate()
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [requestError, setRequestError] = useState<string | null>(null)
   const [successMessage, setSuccessMessage] = useState<string | null>(null)
@@ -39,6 +42,28 @@ export function LoginForm() {
     () =>
       formSchema.superRefine((data, ctx) => {
         if (mode === "signup") {
+          // Validate display name
+          if (!data.displayName || data.displayName.trim().length === 0) {
+            ctx.addIssue({
+              path: ["displayName"],
+              code: z.ZodIssueCode.custom,
+              message: "Please enter your name",
+            })
+          } else if (data.displayName.trim().length < 2) {
+            ctx.addIssue({
+              path: ["displayName"],
+              code: z.ZodIssueCode.custom,
+              message: "Name must be at least 2 characters",
+            })
+          } else if (data.displayName.trim().length > 100) {
+            ctx.addIssue({
+              path: ["displayName"],
+              code: z.ZodIssueCode.custom,
+              message: "Name must be 100 characters or fewer",
+            })
+          }
+          
+          // Validate password confirmation
           if (!data.confirmPassword || data.confirmPassword.trim().length === 0) {
             ctx.addIssue({
               path: ["confirmPassword"],
@@ -59,7 +84,7 @@ export function LoginForm() {
 
   const form = useForm<FormValues>({
     resolver: zodResolver(schema),
-    defaultValues: { email: "", password: "", confirmPassword: "" },
+    defaultValues: { email: "", password: "", confirmPassword: "", displayName: "" },
   })
 
   const toggleMode = useCallback(() => {
@@ -70,12 +95,13 @@ export function LoginForm() {
       email: form.getValues("email"),
       password: "",
       confirmPassword: "",
+      displayName: "",
     })
   }, [form])
 
   const handleSubmit = useMemo(
     () =>
-      form.handleSubmit(async ({ email, password }) => {
+      form.handleSubmit(async ({ email, password, displayName }) => {
         setRequestError(null)
         setSuccessMessage(null)
         setIsSubmitting(true)
@@ -98,11 +124,16 @@ export function LoginForm() {
               description: "Redirecting you to your dashboard",
             })
             await refreshUser()
-            form.reset({ email: "", password: "", confirmPassword: "" })
+            form.reset({ email: "", password: "", confirmPassword: "", displayName: "" })
+            
+            // Redirect to dashboard after successful login
+            setTimeout(() => {
+              navigate("/dashboard")
+            }, 500)
             return
           }
 
-          const result = await signUpWithPassword(email, password)
+          const result = await signUpWithPassword(email, password, displayName)
           if (result.error) {
             setRequestError(result.error)
             toast({
@@ -122,6 +153,7 @@ export function LoginForm() {
             email,
             password: "",
             confirmPassword: "",
+            displayName: "",
           })
           setMode("login")
         } catch (error) {
@@ -131,7 +163,7 @@ export function LoginForm() {
           setIsSubmitting(false)
         }
       }),
-    [form, mode, signInWithPassword, signUpWithPassword],
+    [form, mode, signInWithPassword, signUpWithPassword, refreshUser, navigate, toast],
   )
 
   return (
@@ -184,6 +216,32 @@ export function LoginForm() {
                     </FormItem>
                   )}
                 />
+
+                {mode === "signup" && (
+                  <FormField
+                    control={form.control}
+                    name="displayName"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Your Name</FormLabel>
+                        <FormControl>
+                          <div className="relative flex items-center">
+                            <User className="absolute left-3 h-4 w-4 text-muted-foreground" />
+                            <Input
+                              {...field}
+                              type="text"
+                              placeholder="John Doe"
+                              className="pl-9"
+                              autoComplete="name"
+                              disabled={isSubmitting}
+                            />
+                          </div>
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                )}
 
                 <FormField
                   control={form.control}

@@ -44,12 +44,32 @@ export function EventsProvider({ children }: { children: ReactNode }) {
     try {
       setLoading(true)
       const data = await EventService.listEvents()
-      setEvents(
-        data.map((event) => ({
+      const now = new Date()
+      
+      // Map events and auto-update status based on date
+      const mappedEvents = data.map((event) => {
+        const eventDate = new Date(event.startsAt)
+        // Consider event completed if it's more than 24 hours past the start time
+        const completionThreshold = new Date(eventDate.getTime() + 24 * 60 * 60 * 1000)
+        
+        let status = event.status as Event["status"]
+        
+        // Auto-complete events that have passed
+        if (status === "active" && now > completionThreshold) {
+          status = "completed"
+          // Update in background (don't await to avoid blocking UI)
+          EventService.updateEvent(event.id, { status: "completed" }).catch(err => 
+            console.error("Failed to auto-complete event", event.id, err)
+          )
+        }
+        
+        return {
           ...event,
-          status: event.status as Event["status"],
-        })),
-      )
+          status,
+        }
+      })
+      
+      setEvents(mappedEvents)
     } catch (error) {
       console.error("Failed to load events", error)
       throw error

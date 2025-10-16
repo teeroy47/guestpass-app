@@ -12,6 +12,7 @@ import { CreateEventDialog } from "./create-event-dialog"
 import { EventDetailsDialog } from "./event-details-dialog"
 import { Camera, Calendar, MapPin, Users, Plus, Search, MoreHorizontal, Mail } from "lucide-react"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
+import { QRScanner } from "@/components/scanner/qr-scanner"
 
 export function getStatusColor(status: string) {
   switch (status) {
@@ -33,6 +34,7 @@ export function formatDate(dateString: string) {
     day: "numeric",
     hour: "2-digit",
     minute: "2-digit",
+    hour12: false,
   })
 }
 
@@ -48,7 +50,7 @@ const EventCard = ({
   onOpenScanner: (eventId: string) => void
 }) => {
   return (
-    <Card className="bg-gray-900 border-gray-800 hover:border-gray-700 transition-colors">
+    <Card className="bg-card border-border hover:border-primary/50 transition-colors cursor-pointer" onClick={() => onEdit(event)}>
       <CardHeader className="pb-3">
         <div className="flex items-start justify-between">
           <div className="flex-1">
@@ -60,13 +62,13 @@ const EventCard = ({
           {event.isAdmin && (
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <Button variant="ghost" size="sm">
+                <Button variant="ghost" size="sm" onClick={(e) => e.stopPropagation()}>
                   <MoreHorizontal className="h-4 w-4" />
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end">
-                <DropdownMenuItem onClick={() => onEdit(event)}>Edit Event</DropdownMenuItem>
-                <DropdownMenuItem onClick={() => onDelete(event.id)} className="text-destructive">
+                <DropdownMenuItem onClick={(e) => { e.stopPropagation(); onEdit(event); }}>Edit Event</DropdownMenuItem>
+                <DropdownMenuItem onClick={(e) => { e.stopPropagation(); onDelete(event.id); }} className="text-destructive">
                   Delete Event
                 </DropdownMenuItem>
               </DropdownMenuContent>
@@ -74,7 +76,7 @@ const EventCard = ({
           )}
         </div>
       </CardHeader>
-      <CardContent className="space-y-3" onClick={() => onEdit(event)}>
+      <CardContent className="space-y-3">
         {event.description && <CardDescription className="line-clamp-2">{event.description}</CardDescription>}
 
         <div className="space-y-2 text-sm text-muted-foreground">
@@ -100,11 +102,17 @@ const EventCard = ({
               <span>Attendance</span>
               <span>{Math.round((event.checkedInGuests / event.totalGuests) * 100)}%</span>
             </div>
-            <div className="w-full bg-secondary rounded-full h-2">
+            <div className="w-full bg-secondary rounded-full h-2.5 overflow-hidden">
               <div
-                className="bg-primary h-2 rounded-full transition-all"
+                className="h-2.5 rounded-full transition-all duration-500 ease-out"
                 style={{
                   width: `${(event.checkedInGuests / event.totalGuests) * 100}%`,
+                  backgroundColor: (() => {
+                    const percentage = (event.checkedInGuests / event.totalGuests) * 100
+                    if (percentage < 30) return 'rgb(239, 68, 68)' // red-500
+                    if (percentage < 70) return 'rgb(234, 179, 8)' // yellow-500
+                    return 'rgb(34, 197, 94)' // green-500
+                  })()
                 }}
               />
             </div>
@@ -116,8 +124,11 @@ const EventCard = ({
             <Button
               variant="outline"
               size="sm"
-              onClick={() => onDelete(event.id)}
-              className="border-red-600 text-red-400 hover:bg-red-600 hover:text-white"
+              onClick={(e) => {
+                e.stopPropagation()
+                onDelete(event.id)
+              }}
+              className="border-destructive/50 text-destructive hover:bg-destructive hover:text-destructive-foreground"
             >
               Delete Event
             </Button>
@@ -125,8 +136,11 @@ const EventCard = ({
           <Button
             variant="outline"
             size="sm"
-            onClick={() => onOpenScanner(event.id)}
-            className="border-blue-600 text-blue-400 hover:bg-blue-600 hover:text-white"
+            onClick={(e) => {
+              e.stopPropagation()
+              onOpenScanner(event.id)
+            }}
+            className="border-primary/50 text-primary hover:bg-primary hover:text-primary-foreground"
           >
             <Camera className="h-4 w-4 mr-1" />
             Scan
@@ -148,6 +162,7 @@ export function EventList() {
   const [editingEvent, setEditingEvent] = useState<any | null>(null)
   const [showDetailsDialog, setShowDetailsDialog] = useState(false)
   const [showInviteBuilder, setShowInviteBuilder] = useState(false)
+  const [scannerEventId, setScannerEventId] = useState<string | null>(null)
 
   const isAdmin = role === "admin"
 
@@ -166,8 +181,7 @@ export function EventList() {
   }
 
   const onOpenScanner = (eventId: string) => {
-    // Implement scanner logic here
-    console.log(`Open scanner for event ${eventId}`)
+    setScannerEventId(eventId)
   }
 
   const handleOpenGuestManager = () => {
@@ -204,29 +218,38 @@ export function EventList() {
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+      <div className="flex flex-col gap-4">
         <div>
           <h2 className="text-2xl font-bold text-foreground">Events</h2>
           <p className="text-muted-foreground">Manage your events and track attendance</p>
         </div>
-        <div className="flex gap-2">
-          {isAdmin && (
-            <>
-              <Button variant="outline" onClick={handleOpenGuestManager}>
-                <Users className="mr-2 h-4 w-4" />
-                Manage Guests
-              </Button>
-              <Button onClick={handleOpenCreateDialog}>
-                <Plus className="mr-2 h-4 w-4" />
-                Create Event
-              </Button>
-              <Button variant="outline" onClick={() => setShowInviteBuilder(true)}>
-                <Mail className="mr-2 h-4 w-4" />
-                Create Invite
-              </Button>
-            </>
-          )}
-        </div>
+        {isAdmin && (
+          <div className="flex flex-col sm:flex-row gap-2">
+            <Button 
+              variant="outline" 
+              onClick={handleOpenGuestManager}
+              className="w-full sm:w-auto bg-card hover:bg-accent"
+            >
+              <Users className="mr-2 h-4 w-4" />
+              <span>Manage Guests</span>
+            </Button>
+            <Button 
+              onClick={handleOpenCreateDialog}
+              className="w-full sm:w-auto"
+            >
+              <Plus className="mr-2 h-4 w-4" />
+              <span>Create Event</span>
+            </Button>
+            <Button 
+              variant="outline" 
+              onClick={() => setShowInviteBuilder(true)}
+              className="w-full sm:w-auto bg-card hover:bg-accent"
+            >
+              <Mail className="mr-2 h-4 w-4" />
+              <span>Create Invite</span>
+            </Button>
+          </div>
+        )}
       </div>
 
       {/* Filters */}
@@ -308,6 +331,14 @@ export function EventList() {
         }}
         defaultTab={showDetailsDialog ? "guests" : undefined}
       />
+      
+      {/* QR Scanner */}
+      {scannerEventId && (
+        <QRScanner
+          eventId={scannerEventId}
+          onClose={() => setScannerEventId(null)}
+        />
+      )}
     </div>
   )
 }

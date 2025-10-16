@@ -16,19 +16,25 @@ import { GuestList } from "@/components/guests/guest-list"
 import { QRCodeGenerator } from "@/components/qr/qr-code-generator"
 import { QRScanner } from "@/components/scanner/qr-scanner"
 import { AnalyticsDashboard } from "@/components/analytics/analytics-dashboard"
-import { QrCode, Users, Calendar, Upload, Scan, Plus, BarChart3, LogOut } from "lucide-react"
+import { ActiveEventsRealtime } from "@/components/dashboard/active-events-realtime"
+import { UsherStatistics } from "@/components/dashboard/usher-statistics"
+import { UserProfile } from "@/components/profile/user-profile"
+import { QrCode, Users, Calendar, Upload, Scan, Plus, BarChart3, LogOut, User } from "lucide-react"
 
 export function Dashboard() {
-  const { events } = useEvents()
-  const { guests } = useGuests()
-  const { user, signOut } = useAuth()
+  const { events, loading: eventsLoading } = useEvents()
+  const { guests, loading: guestsLoading } = useGuests()
+  const { user, signOut, displayName: authDisplayName } = useAuth()
   const { toast } = useToast()
   const [activeTab, setActiveTab] = useState("overview")
   const [scannerOpen, setScannerOpen] = useState(false)
   const [selectedEventForScanning, setSelectedEventForScanning] = useState<string | null>(null)
   const [isAccountMenuOpen, setIsAccountMenuOpen] = useState(false)
+  
+  const isLoading = eventsLoading || guestsLoading
 
-  const displayName = user?.user_metadata?.full_name ?? user?.email ?? "GuestPass User"
+  // Use display name from auth context (which comes from database), fallback to email
+  const displayName = authDisplayName ?? user?.email ?? "GuestPass User"
   const role = (user?.app_metadata?.role ?? "usher") as "admin" | "usher"
   const isAdmin = role === "admin"
 
@@ -38,6 +44,15 @@ export function Dashboard() {
   const totalGuests = guests.length
   const totalCheckedIn = guests.filter((g) => g.checkedIn).length
   const attendanceRate = totalGuests > 0 ? (totalCheckedIn / totalGuests) * 100 : 0
+  
+  // Calculate active scanners (guests checked in within the last 5 minutes)
+  const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000)
+  const activeScanners = new Set(
+    guests
+      .filter((g) => g.checkedIn && g.checkedInAt && new Date(g.checkedInAt) > fiveMinutesAgo)
+      .map((g) => g.checkedInBy)
+      .filter((by): by is string => !!by)
+  ).size
 
   const openScanner = (eventId: string) => {
     setSelectedEventForScanning(eventId)
@@ -50,24 +65,24 @@ export function Dashboard() {
   }
 
   return (
-    <div className="min-h-screen bg-black text-white">
+    <div className="min-h-screen bg-background">
       {/* Header */}
-      <header className="border-b border-border bg-card">
+      <header className="border-b border-border bg-card/50 backdrop-blur-sm sticky top-0 z-40">
         <div className="container mx-auto px-4 py-4">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center space-x-3">
-              <QrCode className="h-8 w-8 text-primary" />
-              <div>
-                <h1 className="text-2xl font-bold text-foreground">guestPass</h1>
-                <p className="text-sm text-muted-foreground">Event Check-in System</p>
+          <div className="flex items-center justify-between gap-4">
+            <div className="flex items-center space-x-2 sm:space-x-3 min-w-0">
+              <QrCode className="h-6 w-6 sm:h-8 sm:w-8 text-primary shrink-0" />
+              <div className="min-w-0">
+                <h1 className="text-lg sm:text-2xl font-bold text-foreground truncate">guestPass</h1>
+                <p className="text-xs sm:text-sm text-muted-foreground hidden sm:block">Event Check-in System</p>
               </div>
             </div>
 
-            <div className="relative">
-              <div className="flex items-center space-x-4">
-                <div className="text-right">
+            <div className="relative shrink-0">
+              <div className="flex items-center space-x-2 sm:space-x-4">
+                <div className="text-right hidden sm:block">
                   <p className="text-sm font-medium text-foreground">{displayName}</p>
-                  <div className="flex items-center space-x-2">
+                  <div className="flex items-center justify-end space-x-2">
                     <Badge variant={isAdmin ? "default" : "secondary"}>{role}</Badge>
                   </div>
                 </div>
@@ -110,139 +125,146 @@ export function Dashboard() {
       </header>
 
       {/* Main Content */}
-      <main className="container mx-auto px-4 py-8">
+      <main className="container mx-auto px-4 py-6 sm:py-8">
         <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
-          <TabsList className="grid w-full grid-cols-6 lg:w-auto lg:grid-cols-7">
-            <TabsTrigger value="overview">Overview</TabsTrigger>
-            <TabsTrigger value="events">Events</TabsTrigger>
-            {isAdmin && <TabsTrigger value="upload">Upload</TabsTrigger>}
-            <TabsTrigger value="guests">Guests</TabsTrigger>
-            <TabsTrigger value="qr-codes">QR Codes</TabsTrigger>
-            <TabsTrigger value="scanner">Scanner</TabsTrigger>
-            {isAdmin && <TabsTrigger value="analytics">Analytics</TabsTrigger>}
-          </TabsList>
+          <div className="overflow-x-auto -mx-4 px-4 sm:mx-0 sm:px-0">
+            <TabsList className="inline-flex w-auto min-w-full sm:min-w-0 bg-muted/50">
+              <TabsTrigger value="overview" className="text-xs sm:text-sm">Overview</TabsTrigger>
+              <TabsTrigger value="events" className="text-xs sm:text-sm">Events</TabsTrigger>
+              {isAdmin && <TabsTrigger value="upload" className="text-xs sm:text-sm">Upload</TabsTrigger>}
+              <TabsTrigger value="guests" className="text-xs sm:text-sm">Guests</TabsTrigger>
+              <TabsTrigger value="qr-codes" className="text-xs sm:text-sm whitespace-nowrap">QR Codes</TabsTrigger>
+              <TabsTrigger value="scanner" className="text-xs sm:text-sm">Scanner</TabsTrigger>
+              {isAdmin && <TabsTrigger value="analytics" className="text-xs sm:text-sm">Analytics</TabsTrigger>}
+              <TabsTrigger value="profile" className="text-xs sm:text-sm">Profile</TabsTrigger>
+            </TabsList>
+          </div>
 
           <TabsContent value="overview" className="space-y-6">
-            <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-4">
-              <Card>
-                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                  <CardTitle className="text-sm font-medium">Total Events</CardTitle>
-                  <Calendar className="h-4 w-4 text-muted-foreground" />
-                </CardHeader>
-                <CardContent>
-                  <div className="text-2xl font-bold">{totalEvents}</div>
-                  <p className="text-xs text-muted-foreground">{activeEvents} currently active</p>
-                </CardContent>
-              </Card>
+            {isLoading ? (
+              <div className="flex items-center justify-center py-12">
+                <div className="text-center space-y-4">
+                  <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mx-auto"></div>
+                  <p className="text-sm text-muted-foreground">Loading dashboard data...</p>
+                </div>
+              </div>
+            ) : (
+              <>
+                <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-4">
+                  <Card>
+                    <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                      <CardTitle className="text-sm font-medium">Total Events</CardTitle>
+                      <Calendar className="h-4 w-4 text-muted-foreground" />
+                    </CardHeader>
+                    <CardContent>
+                      <div className="text-2xl font-bold">{totalEvents}</div>
+                      <p className="text-xs text-muted-foreground">{activeEvents} currently active</p>
+                    </CardContent>
+                  </Card>
 
-              <Card>
-                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                  <CardTitle className="text-sm font-medium">Total Guests</CardTitle>
-                  <Users className="h-4 w-4 text-muted-foreground" />
-                </CardHeader>
-                <CardContent>
-                  <div className="text-2xl font-bold">{totalGuests.toLocaleString()}</div>
-                  <p className="text-xs text-muted-foreground">Across all events</p>
-                </CardContent>
-              </Card>
+                  <Card>
+                    <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                      <CardTitle className="text-sm font-medium">Total Guests</CardTitle>
+                      <Users className="h-4 w-4 text-muted-foreground" />
+                    </CardHeader>
+                    <CardContent>
+                      <div className="text-2xl font-bold">{totalGuests.toLocaleString()}</div>
+                      <p className="text-xs text-muted-foreground">Across all events</p>
+                    </CardContent>
+                  </Card>
 
-              <Card>
-                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                  <CardTitle className="text-sm font-medium">Checked In</CardTitle>
-                  <QrCode className="h-4 w-4 text-muted-foreground" />
-                </CardHeader>
-                <CardContent>
-                  <div className="text-2xl font-bold">{totalCheckedIn.toLocaleString()}</div>
-                  <p className="text-xs text-muted-foreground">{attendanceRate.toFixed(1)}% attendance rate</p>
-                </CardContent>
-              </Card>
+                  <Card>
+                    <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                      <CardTitle className="text-sm font-medium">Checked In</CardTitle>
+                      <QrCode className="h-4 w-4 text-muted-foreground" />
+                    </CardHeader>
+                    <CardContent>
+                      <div className="text-2xl font-bold">{totalCheckedIn.toLocaleString()}</div>
+                      <p className="text-xs text-muted-foreground">{attendanceRate.toFixed(1)}% attendance rate</p>
+                    </CardContent>
+                  </Card>
 
-              <Card>
-                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                  <CardTitle className="text-sm font-medium">Active Scanners</CardTitle>
-                  <Scan className="h-4 w-4 text-muted-foreground" />
-                </CardHeader>
-                <CardContent>
-                  <div className="text-2xl font-bold">5</div>
-                  <p className="text-xs text-muted-foreground">Ushers currently scanning</p>
-                </CardContent>
-              </Card>
-            </div>
+                  <Card>
+                    <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                      <CardTitle className="text-sm font-medium">Active Scanners</CardTitle>
+                      <Scan className="h-4 w-4 text-muted-foreground" />
+                    </CardHeader>
+                    <CardContent>
+                      <div className="text-2xl font-bold">{activeScanners}</div>
+                      <p className="text-xs text-muted-foreground">Active in last 5 minutes</p>
+                    </CardContent>
+                  </Card>
+                </div>
+              </>
+            )}
 
-            <div className="grid gap-6 md:grid-cols-2">
-              <Card>
-                <CardHeader>
-                  <CardTitle>Recent Events</CardTitle>
-                  <CardDescription>Your latest event check-ins</CardDescription>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  {events.slice(0, 3).map((event) => (
-                    <div key={event.id} className="flex items-center justify-between">
-                      <div>
-                        <p className="font-medium">{event.title}</p>
-                        <p className="text-sm text-muted-foreground">{new Date(event.startsAt).toLocaleDateString()}</p>
-                      </div>
-                      <Badge variant={event.status === "active" ? "default" : "secondary"}>{event.status}</Badge>
-                    </div>
-                  ))}
-                </CardContent>
-              </Card>
+            {!isLoading && (
+              <>
+                <div className="grid gap-6 md:grid-cols-2">
+                  <ActiveEventsRealtime />
 
-              <Card>
-                <CardHeader>
-                  <CardTitle>Quick Actions</CardTitle>
-                  <CardDescription>Common tasks for event management</CardDescription>
-                </CardHeader>
-                <CardContent className="space-y-3">
-                  {isAdmin && (
-                    <Button
-                      className="w-full justify-start bg-transparent"
-                      variant="outline"
-                      onClick={() => setActiveTab("events")}
-                    >
-                      <Plus className="mr-2 h-4 w-4" />
-                      Create New Event
-                    </Button>
-                  )}
-                  <Button
-                    className="w-full justify-start bg-transparent"
-                    variant="outline"
-                    onClick={() => setActiveTab("scanner")}
-                  >
-                    <Scan className="mr-2 h-4 w-4" />
-                    Start Scanning
-                  </Button>
-                  <Button
-                    className="w-full justify-start bg-transparent"
-                    variant="outline"
-                    onClick={() => setActiveTab("qr-codes")}
-                  >
-                    <QrCode className="mr-2 h-4 w-4" />
-                    Generate QR Codes
-                  </Button>
-                  {isAdmin && (
-                    <>
+                  <Card>
+                    <CardHeader>
+                      <CardTitle>Quick Actions</CardTitle>
+                      <CardDescription>Common tasks for event management</CardDescription>
+                    </CardHeader>
+                    <CardContent className="space-y-3">
+                      {isAdmin && (
+                        <Button
+                          className="w-full justify-start"
+                          variant="outline"
+                          onClick={() => setActiveTab("events")}
+                        >
+                          <Plus className="mr-2 h-4 w-4" />
+                          Create New Event
+                        </Button>
+                      )}
                       <Button
-                        className="w-full justify-start bg-transparent"
+                        className="w-full justify-start"
                         variant="outline"
-                        onClick={() => setActiveTab("upload")}
+                        onClick={() => setActiveTab("scanner")}
                       >
-                        <Upload className="mr-2 h-4 w-4" />
-                        Upload Guest List
+                        <Scan className="mr-2 h-4 w-4" />
+                        Start Scanning
                       </Button>
                       <Button
-                        className="w-full justify-start bg-transparent"
+                        className="w-full justify-start"
                         variant="outline"
-                        onClick={() => setActiveTab("analytics")}
+                        onClick={() => setActiveTab("qr-codes")}
                       >
-                        <BarChart3 className="mr-2 h-4 w-4" />
-                        View Analytics
+                        <QrCode className="mr-2 h-4 w-4" />
+                        Generate QR Codes
                       </Button>
-                    </>
-                  )}
-                </CardContent>
-              </Card>
-            </div>
+                      {isAdmin && (
+                        <>
+                          <Button
+                            className="w-full justify-start"
+                            variant="outline"
+                            onClick={() => setActiveTab("upload")}
+                          >
+                            <Upload className="mr-2 h-4 w-4" />
+                            Upload Guest List
+                          </Button>
+                          <Button
+                            className="w-full justify-start"
+                            variant="outline"
+                            onClick={() => setActiveTab("analytics")}
+                          >
+                            <BarChart3 className="mr-2 h-4 w-4" />
+                            View Analytics
+                          </Button>
+                        </>
+                      )}
+                    </CardContent>
+                  </Card>
+                </div>
+
+                {/* Usher Statistics Section - Quick Access */}
+                <div className="mt-6">
+                  <UsherStatistics />
+                </div>
+              </>
+            )}
           </TabsContent>
 
           <TabsContent value="events">
@@ -286,7 +308,7 @@ export function Dashboard() {
                                 <div>
                                   <h3 className="font-medium">{event.title}</h3>
                                   <p className="text-sm text-muted-foreground">
-                                    {new Date(event.startsAt).toLocaleDateString()}
+                                    {new Date(event.startsAt).toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric", hour: "2-digit", minute: "2-digit", hour12: false })}
                                   </p>
                                 </div>
                                 <Button size="sm">
@@ -311,10 +333,19 @@ export function Dashboard() {
           </TabsContent>
 
           {isAdmin && (
-            <TabsContent value="analytics">
+            <TabsContent value="analytics" className="space-y-6">
               <AnalyticsDashboard />
+              
+              {/* Usher Statistics Section */}
+              <div className="mt-6">
+                <UsherStatistics />
+              </div>
             </TabsContent>
           )}
+
+          <TabsContent value="profile">
+            <UserProfile />
+          </TabsContent>
         </Tabs>
       </main>
 

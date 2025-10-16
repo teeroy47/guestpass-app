@@ -9,10 +9,16 @@ export interface Guest {
   eventId: string
   name: string
   email?: string
+  phone?: string
   uniqueCode: string
   checkedIn: boolean
   checkedInAt?: string
   checkedInBy?: string
+  usherName?: string
+  usherEmail?: string
+  attended: boolean
+  photoUrl?: string
+  firstCheckinAt?: string
   createdAt: string
 }
 
@@ -34,11 +40,15 @@ interface GuestsContextType {
     eventId: string,
     uniqueCode: string,
     checkedInBy: string,
+    usherName?: string,
+    usherEmail?: string,
+    photoUrl?: string,
   ) => Promise<{
     status: "ok" | "already" | "not_found"
     guest?: Guest
     checkedInAt?: string
   }>
+  refreshGuests: () => Promise<void>
 }
 
 const GuestsContext = createContext<GuestsContextType | undefined>(undefined)
@@ -219,9 +229,9 @@ export function GuestsProvider({ children }: { children: ReactNode }) {
     }
   }
 
-  const checkInGuest = async (eventId: string, uniqueCode: string, checkedInBy: string) => {
+  const checkInGuest = async (eventId: string, uniqueCode: string, checkedInBy: string, usherName?: string, usherEmail?: string, photoUrl?: string) => {
     try {
-      const result = await GuestService.checkInGuest(eventId, uniqueCode, checkedInBy)
+      const result = await GuestService.checkInGuest(eventId, uniqueCode, checkedInBy, usherName, usherEmail, photoUrl)
 
       if (result.status === "ok" && result.guest) {
         setGuests((prev) =>
@@ -232,6 +242,10 @@ export function GuestsProvider({ children }: { children: ReactNode }) {
                   checkedIn: true,
                   checkedInAt: result.guest?.checkedInAt,
                   checkedInBy: result.guest?.checkedInBy,
+                  usherName: result.guest?.usherName,
+                  usherEmail: result.guest?.usherEmail,
+                  photoUrl: result.guest?.photoUrl,
+                  firstCheckinAt: result.guest?.firstCheckinAt,
                 }
               : guest,
           ),
@@ -256,6 +270,7 @@ export function GuestsProvider({ children }: { children: ReactNode }) {
     deleteGuest,
     deleteGuestsBulk,
     checkInGuest,
+    refreshGuests,
   }
 
   return <GuestsContext.Provider value={value}>{children}</GuestsContext.Provider>

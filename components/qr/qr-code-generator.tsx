@@ -193,16 +193,24 @@ export function QRCodeGenerator() {
             </SelectTrigger>
             <SelectContent>
               {events.map((event) => (
-                <SelectItem key={event.id} value={event.id}>
+                <SelectItem key={event.id} value={event.id} disabled={event.status === "completed"}>
                   {event.title} ({event.status})
+                  {event.status === "completed" && " - QR generation disabled"}
                 </SelectItem>
               ))}
             </SelectContent>
           </Select>
+          {selectedEvent && selectedEvent.status === "completed" && (
+            <div className="mt-4 p-3 bg-yellow-50 dark:bg-yellow-950/20 border border-yellow-200 dark:border-yellow-800 rounded-lg">
+              <p className="text-sm text-yellow-800 dark:text-yellow-200">
+                ⚠️ This event is marked as completed. QR code generation is disabled for completed events.
+              </p>
+            </div>
+          )}
         </CardContent>
       </Card>
 
-      {selectedEventId && (
+      {selectedEventId && selectedEvent && selectedEvent.status !== "completed" && (
         <Tabs defaultValue="individual" className="space-y-6">
           <TabsList>
             <TabsTrigger value="individual">Individual QR Codes</TabsTrigger>

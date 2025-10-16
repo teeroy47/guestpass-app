@@ -8,6 +8,12 @@ import { Camera, Flashlight, FlashlightOff, X, CheckCircle, AlertCircle, Clock }
 import { Html5Qrcode } from "html5-qrcode"
 import { useGuests } from "@/lib/guests-context"
 import { useEvents } from "@/lib/events-context"
+import { useAuth } from "@/lib/auth-context"
+import { soundEffects } from "@/lib/sound-effects"
+import { PhotoCaptureDialog } from "./photo-capture-dialog"
+import { DuplicateCheckinModal } from "./duplicate-checkin-modal"
+import { SupabaseGuestService } from "@/lib/supabase/guest-service"
+import { compressImage } from "@/lib/image-utils"
 
 interface QRScannerProps {
   eventId: string
@@ -27,23 +33,190 @@ export function QRScanner({ eventId, onClose }: QRScannerProps) {
   const [lastScanResult, setLastScanResult] = useState<ScanResultState | null>(null)
   const [scannerError, setScannerError] = useState<string | null>(null)
   const [cameraId, setCameraId] = useState<string | null>(null)
+  const [showPhotoCapture, setShowPhotoCapture] = useState(false)
+  const [showDuplicateModal, setShowDuplicateModal] = useState(false)
+  const [pendingCheckIn, setPendingCheckIn] = useState<{
+    uniqueCode: string
+    guestName: string
+    guestId: string
+  } | null>(null)
+  const [duplicateGuest, setDuplicateGuest] = useState<any>(null)
   
   const html5QrCodeRef = useRef<Html5Qrcode | null>(null)
   const scannerDivId = "qr-reader"
   const isProcessingRef = useRef(false)
   const streamRef = useRef<MediaStream | null>(null)
+  
+  // Performance optimization: Create a Map for O(1) guest lookup by unique code
+  const guestLookupRef = useRef<Map<string, any>>(new Map())
 
-  const { guests, checkInGuest } = useGuests()
+  const { guests, checkInGuest, refreshGuests } = useGuests()
   const { events } = useEvents()
+  const { user, displayName } = useAuth()
 
   const event = events.find((e) => e.id === eventId)
   const eventGuests = guests.filter((g) => g.eventId === eventId)
   const checkedInCount = eventGuests.filter((g) => g.checkedIn).length
+  
+  // Build guest lookup map for fast scanning (O(1) instead of O(n))
+  useEffect(() => {
+    const lookupMap = new Map()
+    eventGuests.forEach(guest => {
+      lookupMap.set(guest.uniqueCode, guest)
+    })
+    guestLookupRef.current = lookupMap
+  }, [eventGuests])
 
   const resetScannerState = useCallback(() => {
     setLastScanResult(null)
     setScannerError(null)
   }, [])
+
+  const handlePhotoSkip = useCallback(
+    async () => {
+      if (!pendingCheckIn) return
+
+      try {
+        // Complete check-in without photo
+        const usherName = displayName || user?.email || "Unknown Usher"
+        const usherEmail = user?.email || undefined
+        const result = await checkInGuest(
+          eventId,
+          pendingCheckIn.uniqueCode,
+          "scanner",
+          usherName,
+          usherEmail,
+          undefined // No photo URL
+        )
+
+        if (result.status === "ok") {
+          soundEffects.playSuccessTone()
+          setLastScanResult({
+            type: "success",
+            message: `${result.guest?.name} checked in successfully (no photo)`,
+            guest: result.guest,
+            timestamp: new Date().toLocaleTimeString("en-US", { hour12: false }),
+          })
+
+          // Reset after 1 second
+          setTimeout(() => {
+            isProcessingRef.current = false
+            setLastScanResult(null)
+          }, 1000)
+        }
+
+        // Refresh guests to get updated data
+        await refreshGuests()
+      } catch (error) {
+        console.error("Failed to check in:", error)
+        setLastScanResult({
+          type: "error",
+          message: "Failed to complete check-in. Please try again.",
+        })
+        setTimeout(() => {
+          isProcessingRef.current = false
+          setLastScanResult(null)
+        }, 2000)
+      } finally {
+        setPendingCheckIn(null)
+        setShowPhotoCapture(false)
+      }
+    },
+    [pendingCheckIn, eventId, displayName, user, checkInGuest, refreshGuests]
+  )
+
+  const handlePhotoCapture = useCallback(
+    async (photoBlob: Blob) => {
+      if (!pendingCheckIn) return
+
+      try {
+        console.log("[QR Scanner] Starting photo capture process:", {
+          guestId: pendingCheckIn.guestId,
+          guestName: pendingCheckIn.guestName,
+          originalBlobSize: photoBlob.size,
+        })
+
+        // Compress photo for faster upload
+        const compressedBlob = await compressImage(
+          new File([photoBlob], "photo.jpg", { type: "image/jpeg" }),
+          {
+            maxWidth: 800,
+            maxHeight: 800,
+            quality: 0.85,
+            format: "jpeg",
+          }
+        )
+
+        console.log("[QR Scanner] Photo compressed:", {
+          compressedSize: compressedBlob.size,
+          compressionRatio: ((1 - compressedBlob.size / photoBlob.size) * 100).toFixed(1) + "%",
+        })
+
+        // Upload photo to Supabase Storage
+        const photoUrl = await SupabaseGuestService.uploadGuestPhoto(
+          pendingCheckIn.guestId,
+          eventId,
+          compressedBlob
+        )
+
+        console.log("[QR Scanner] Photo uploaded, URL received:", photoUrl)
+
+        // Complete check-in with photo URL
+        const usherName = displayName || user?.email || "Unknown Usher"
+        const usherEmail = user?.email || undefined
+        
+        console.log("[QR Scanner] Completing check-in with photo URL...")
+        
+        const result = await checkInGuest(
+          eventId,
+          pendingCheckIn.uniqueCode,
+          "scanner",
+          usherName,
+          usherEmail,
+          photoUrl
+        )
+
+        console.log("[QR Scanner] Check-in completed:", {
+          status: result.status,
+          guestName: result.guest?.name,
+          photoUrlSaved: result.guest?.photoUrl,
+        })
+
+        if (result.status === "ok") {
+          soundEffects.playSuccessTone()
+          setLastScanResult({
+            type: "success",
+            message: `${result.guest?.name} checked in successfully!`,
+            guest: result.guest,
+            timestamp: new Date().toLocaleTimeString("en-US", { hour12: false }),
+          })
+
+          // Reset after 1 second
+          setTimeout(() => {
+            isProcessingRef.current = false
+            setLastScanResult(null)
+          }, 1000)
+        }
+
+        // Refresh guests to get updated data
+        await refreshGuests()
+      } catch (error) {
+        console.error("Failed to upload photo:", error)
+        setLastScanResult({
+          type: "error",
+          message: "Failed to upload photo. Check-in completed without photo.",
+        })
+        setTimeout(() => {
+          isProcessingRef.current = false
+          setLastScanResult(null)
+        }, 2000)
+      } finally {
+        setPendingCheckIn(null)
+        setShowPhotoCapture(false)
+      }
+    },
+    [pendingCheckIn, eventId, displayName, user, checkInGuest, refreshGuests]
+  )
 
   const handleSuccessfulScan = useCallback(
     async (decodedText: string) => {
@@ -58,6 +231,7 @@ export function QRScanner({ eventId, onClose }: QRScannerProps) {
         const [scannedEventId, uniqueCode] = decodedText.split(":")
 
         if (scannedEventId !== eventId) {
+          soundEffects.playErrorTone()
           setLastScanResult({
             type: "error",
             message: "QR code is for a different event",
@@ -68,9 +242,11 @@ export function QRScanner({ eventId, onClose }: QRScannerProps) {
           return
         }
 
-        const guest = eventGuests.find((g) => g.uniqueCode === uniqueCode)
+        // Look up guest from our optimized map
+        const guest = guestLookupRef.current.get(uniqueCode)
 
         if (!guest) {
+          soundEffects.playErrorTone()
           setLastScanResult({
             type: "error",
             message: "Guest not found in this event",
@@ -81,32 +257,22 @@ export function QRScanner({ eventId, onClose }: QRScannerProps) {
           return
         }
 
+        // Check if already checked in
         if (guest.checkedIn) {
-          setLastScanResult({
-            type: "duplicate",
-            message: `${guest.name} already checked in`,
-            guest,
-            timestamp: guest.checkedInAt,
-          })
-          setTimeout(() => {
-            isProcessingRef.current = false
-          }, 1500)
+          soundEffects.playDuplicateTone()
+          setDuplicateGuest(guest)
+          setShowDuplicateModal(true)
+          isProcessingRef.current = false
           return
         }
 
-        await checkInGuest(eventId, uniqueCode, "scanner")
-        setLastScanResult({
-          type: "success",
-          message: `${guest.name} checked in successfully!`,
-          guest,
-          timestamp: new Date().toLocaleTimeString(),
+        // First check-in - capture photo
+        setPendingCheckIn({
+          uniqueCode,
+          guestName: guest.name,
+          guestId: guest.id,
         })
-        
-        // Reset after 2 seconds
-        setTimeout(() => {
-          isProcessingRef.current = false
-          setLastScanResult(null)
-        }, 2000)
+        setShowPhotoCapture(true)
       } catch (error) {
         console.error("Failed to process QR code:", error)
         setLastScanResult({
@@ -118,7 +284,7 @@ export function QRScanner({ eventId, onClose }: QRScannerProps) {
         }, 1500)
       }
     },
-    [checkInGuest, eventGuests, eventId]
+    [eventId, displayName, user]
   )
 
   const stopScanning = useCallback(async () => {
@@ -180,13 +346,14 @@ export function QRScanner({ eventId, onClose }: QRScannerProps) {
       const selectedCameraId = rearCamera?.id || devices[0].id
       setCameraId(selectedCameraId)
 
-      // Start scanning with optimized config
+      // Start scanning with optimized config for fast detection
       await html5QrCodeRef.current.start(
         selectedCameraId,
         {
-          fps: 10, // Scan 10 times per second
+          fps: 30, // Increased to 30 FPS for faster detection with large guest lists
           qrbox: { width: 250, height: 250 }, // Scanning box size
           aspectRatio: 1.0,
+          disableFlip: false, // Allow flipped QR codes
         },
         (decodedText) => {
           handleSuccessfulScan(decodedText)
@@ -258,16 +425,44 @@ export function QRScanner({ eventId, onClose }: QRScannerProps) {
   // Cleanup on unmount
   useEffect(() => {
     return () => {
-      stopScanning()
-      if (html5QrCodeRef.current) {
-        html5QrCodeRef.current.clear().catch(console.error)
+      // Cleanup function
+      const cleanup = async () => {
+        try {
+          await stopScanning()
+          
+          // Only clear if scanner exists and has the clear method
+          if (html5QrCodeRef.current && typeof html5QrCodeRef.current.clear === 'function') {
+            try {
+              await html5QrCodeRef.current.clear()
+            } catch (error) {
+              // Silently handle clear errors during unmount
+              console.debug("Scanner cleanup:", error)
+            }
+          }
+        } catch (error) {
+          console.debug("Cleanup error:", error)
+        }
       }
+      
+      cleanup()
     }
   }, [stopScanning])
 
   return (
-    <div className="fixed inset-0 bg-gradient-to-b from-gray-900 to-black z-50 flex flex-col safe-area-inset">
-      {/* Header */}
+    <>
+      <style>{`
+        #${scannerDivId} video {
+          width: 100% !important;
+          height: 100% !important;
+          object-fit: cover !important;
+          border-radius: 1rem;
+        }
+        #${scannerDivId} {
+          box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.7);
+        }
+      `}</style>
+      <div className="fixed inset-0 bg-gradient-to-b from-gray-900 to-black z-50 flex flex-col safe-area-inset">
+        {/* Header */}
       <div className="flex items-center justify-between p-4 bg-black/60 border-b border-white/10 backdrop-blur-sm">
         <div className="flex-1 min-w-0">
           <h2 className="text-lg font-semibold text-white truncate">{event?.title}</h2>
@@ -289,16 +484,18 @@ export function QRScanner({ eventId, onClose }: QRScannerProps) {
       </div>
 
       {/* Scanner Area */}
-      <div className="flex-1 relative overflow-hidden">
+      <div className="flex-1 relative overflow-hidden bg-black">
         {isScanning ? (
           <>
-            {/* QR Scanner Container */}
+            {/* QR Scanner Container - Constrained to center box */}
             <div 
               id={scannerDivId} 
-              className="w-full h-full"
+              className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2"
               style={{
-                position: 'absolute',
-                inset: 0,
+                width: '280px',
+                height: '280px',
+                overflow: 'hidden',
+                borderRadius: '1rem',
               }}
             />
 
@@ -451,6 +648,35 @@ export function QRScanner({ eventId, onClose }: QRScannerProps) {
           </div>
         </div>
       </div>
+
+      {/* Photo Capture Dialog */}
+      {showPhotoCapture && pendingCheckIn && (
+        <PhotoCaptureDialog
+          open={showPhotoCapture}
+          onClose={() => {
+            setShowPhotoCapture(false)
+            setPendingCheckIn(null)
+            isProcessingRef.current = false
+          }}
+          onCapture={handlePhotoCapture}
+          onSkip={handlePhotoSkip}
+          guestName={pendingCheckIn.guestName}
+        />
+      )}
+
+      {/* Duplicate Check-in Modal */}
+      {showDuplicateModal && duplicateGuest && (
+        <DuplicateCheckinModal
+          open={showDuplicateModal}
+          onClose={() => {
+            setShowDuplicateModal(false)
+            setDuplicateGuest(null)
+            isProcessingRef.current = false
+          }}
+          guest={duplicateGuest}
+        />
+      )}
     </div>
+    </>
   )
 }

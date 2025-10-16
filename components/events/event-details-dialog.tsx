@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
+import { Checkbox } from "@/components/ui/checkbox"
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
@@ -15,14 +16,23 @@ import { useToast } from "@/components/ui/use-toast"
 import { useEvents } from "@/lib/events-context"
 import { useGuests, type Guest } from "@/lib/guests-context"
 import { useAuth } from "@/lib/auth-context"
-import { generateQRCodeData, generateQRCodeSVG, downloadQRCodeAsPNG } from "@/lib/qr-utils"
-import { Calendar, Users, QrCode, Download, Upload, BarChart3, Loader2, Plus, Trash2, Pencil, X, Check, ShieldAlert } from "lucide-react"
+import { exportToExcel, exportToPDF } from "@/lib/export-utils"
+import { SupabaseGuestService } from "@/lib/supabase/guest-service"
+import { AnalyticsDashboard } from "@/components/analytics/analytics-dashboard"
+import { GuestUploadDialog } from "@/components/guests/guest-upload-dialog"
+import { Calendar, Users, Download, Upload, BarChart3, Loader2, Plus, Trash2, Pencil, X, Check, ShieldAlert, FileSpreadsheet, FileText, Mail, Send } from "lucide-react"
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
 
 interface EventDetailsDialogProps {
   eventId: string
   open: boolean
   onOpenChange: (open: boolean) => void
-  defaultTab?: "overview" | "guests" | "qr" | "analytics"
+  defaultTab?: "overview" | "guests" | "analytics"
 }
 
 type EventFormState = {
@@ -48,8 +58,10 @@ export function EventDetailsDialog({ eventId, open, onOpenChange, defaultTab = "
   const userRole = (user?.app_metadata?.role ?? "usher") as "admin" | "usher"
   const canManageGuests = userRole === "admin"
   const isAuthReady = !isAuthLoading
+  const isEventCompleted = event?.status === "completed"
   const showAdminControls = !isAuthReady || !user || canManageGuests
   const isReadOnlyAdminView = isAuthReady && !!user && !canManageGuests
+  const isReadOnly = isReadOnlyAdminView || isEventCompleted
 
   const [guestForm, setGuestForm] = useState({
     name: "",
@@ -60,6 +72,9 @@ export function EventDetailsDialog({ eventId, open, onOpenChange, defaultTab = "
   const [guestSearch, setGuestSearch] = useState("")
   const [guestFormErrors, setGuestFormErrors] = useState<string | null>(null)
   const [isGuestSubmitting, setIsGuestSubmitting] = useState(false)
+  const [selectedGuests, setSelectedGuests] = useState<Set<string>>(new Set())
+  const [isSendingInvites, setIsSendingInvites] = useState(false)
+  const [isUploadDialogOpen, setIsUploadDialogOpen] = useState(false)
 
   useEffect(() => {
     if (event && open) {
@@ -100,6 +115,7 @@ export function EventDetailsDialog({ eventId, open, onOpenChange, defaultTab = "
       day: "numeric",
       hour: "2-digit",
       minute: "2-digit",
+      hour12: false,
     })
   }
 
@@ -119,11 +135,208 @@ export function EventDetailsDialog({ eventId, open, onOpenChange, defaultTab = "
   const attendanceRate =
     eventGuests.length > 0 ? (eventGuests.filter((g) => g.checkedIn).length / eventGuests.length) * 100 : 0
 
-  const downloadGuestQR = (guest: any) => {
-    const qrData = generateQRCodeData(event.id, guest.uniqueCode)
-    const svgString = generateQRCodeSVG(qrData, 400)
-    const filename = `${guest.name.replace(/[^a-zA-Z0-9]/g, "-")}-${guest.uniqueCode}.png`
-    downloadQRCodeAsPNG(svgString, filename, 400)
+  const handleExportExcel = () => {
+    try {
+      exportToExcel({
+        event: {
+          ...event,
+          description: event.description ?? undefined,
+          venue: event.venue ?? undefined,
+        },
+        guests: eventGuests,
+      })
+      toast({
+        title: "Export Successful",
+        description: "Event data exported to Excel successfully",
+      })
+    } catch (error) {
+      console.error("Export error:", error)
+      toast({
+        title: "Export Failed",
+        description: "Failed to export data. Please try again.",
+        variant: "destructive",
+      })
+    }
+  }
+
+  const handleExportPDF = () => {
+    try {
+      exportToPDF({
+        event: {
+          ...event,
+          description: event.description ?? undefined,
+          venue: event.venue ?? undefined,
+        },
+        guests: eventGuests,
+      })
+      toast({
+        title: "Export Successful",
+        description: "Event report exported to PDF successfully",
+      })
+    } catch (error) {
+      console.error("Export error:", error)
+      toast({
+        title: "Export Failed",
+        description: "Failed to export report. Please try again.",
+        variant: "destructive",
+      })
+    }
+  }
+
+  const handleSendInvitations = async (sendToAll: boolean = false) => {
+    // Determine which guests to send to
+    let guestsToInvite = sendToAll 
+      ? eventGuests.filter(g => g.email && g.email.trim() !== "")
+      : eventGuests.filter(g => selectedGuests.has(g.id) && g.email && g.email.trim() !== "")
+
+    if (guestsToInvite.length === 0) {
+      toast({
+        title: "No guests to invite",
+        description: sendToAll 
+          ? "No guests have email addresses on file."
+          : "Please select guests with email addresses to send invitations.",
+        variant: "destructive",
+      })
+      return
+    }
+
+    // Filter out guests who already received invitations
+    const alreadyInvited = guestsToInvite.filter(g => g.invitationSent)
+    const notYetInvited = guestsToInvite.filter(g => !g.invitationSent)
+
+    // Warn if some guests already received invitations
+    if (alreadyInvited.length > 0) {
+      const proceed = confirm(
+        `${alreadyInvited.length} guest(s) already received invitations:\n${alreadyInvited.map(g => `- ${g.name}`).join('\n')}\n\nDo you want to send invitations only to the ${notYetInvited.length} guest(s) who haven't received one yet?`
+      )
+      if (!proceed) {
+        return
+      }
+    }
+
+    // Use only guests who haven't been invited yet
+    const finalGuestsToInvite = notYetInvited.length > 0 ? notYetInvited : guestsToInvite
+
+    if (finalGuestsToInvite.length === 0) {
+      toast({
+        title: "All guests already invited",
+        description: "All selected guests have already received invitations.",
+        variant: "default",
+      })
+      return
+    }
+
+    // Confirm before sending
+    const confirmMessage = `Send invitations to ${finalGuestsToInvite.length} guest(s)?`
+    
+    if (!confirm(confirmMessage)) {
+      return
+    }
+
+    setIsSendingInvites(true)
+
+    try {
+      const response = await fetch("/api/send-invitations", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          eventId: event.id,
+          eventTitle: event.title,
+          eventDate: event.startsAt,
+          eventVenue: event.venue,
+          guests: finalGuestsToInvite.map(g => ({
+            id: g.id,
+            name: g.name,
+            email: g.email!,
+            uniqueCode: g.uniqueCode,
+          })),
+        }),
+      })
+
+      const data = await response.json()
+
+      if (!response.ok) {
+        throw new Error(data.error || "Failed to send invitations")
+      }
+
+      // Mark guests as invited in the database
+      if (data.results.sentGuestIds && data.results.sentGuestIds.length > 0) {
+        try {
+          await SupabaseGuestService.markInvitationSent(data.results.sentGuestIds)
+          // Refresh the guest list to show updated invitation status
+          await getGuestsByEvent(eventId)
+        } catch (error) {
+          console.error("Failed to update invitation status:", error)
+        }
+      }
+
+      // Clear selection after successful send
+      setSelectedGuests(new Set())
+
+      // Show success notification
+      if (data.results.sent > 0) {
+        toast({
+          title: "✅ Invitations Sent Successfully!",
+          description: `Successfully sent ${data.results.sent} invitation${data.results.sent > 1 ? 's' : ''} with QR codes.`,
+        })
+      }
+
+      // Show detailed results if there were failures
+      if (data.results.failed > 0 && data.results.failedEmails) {
+        console.error("Failed emails:", data.results.failedEmails)
+        
+        // Create a detailed error message
+        const failedEmailsList = data.results.failedEmails
+          .map((f: any) => `${f.email}: ${f.error}`)
+          .join(', ')
+        
+        toast({
+          title: "⚠️ Some Invitations Failed",
+          description: `${data.results.failed} email(s) could not be sent. Failed: ${failedEmailsList.substring(0, 100)}${failedEmailsList.length > 100 ? '...' : ''}`,
+          variant: "destructive",
+        })
+      }
+      
+      // If all failed
+      if (data.results.sent === 0 && data.results.failed > 0) {
+        toast({
+          title: "❌ All Invitations Failed",
+          description: "No invitations were sent. Please check the email addresses and try again.",
+          variant: "destructive",
+        })
+      }
+    } catch (error) {
+      console.error("Error sending invitations:", error)
+      toast({
+        title: "Failed to send invitations",
+        description: error instanceof Error ? error.message : "An unexpected error occurred",
+        variant: "destructive",
+      })
+    } finally {
+      setIsSendingInvites(false)
+    }
+  }
+
+  const toggleGuestSelection = (guestId: string) => {
+    setSelectedGuests(prev => {
+      const newSet = new Set(prev)
+      if (newSet.has(guestId)) {
+        newSet.delete(guestId)
+      } else {
+        newSet.add(guestId)
+      }
+      return newSet
+    })
+  }
+
+  const toggleSelectAll = () => {
+    if (selectedGuests.size === filteredGuests.length) {
+      setSelectedGuests(new Set())
+    } else {
+      setSelectedGuests(new Set(filteredGuests.map(g => g.id)))
+    }
   }
 
   const handleFieldChange = (field: keyof EventFormState, value: string) => {
@@ -161,32 +374,47 @@ export function EventDetailsDialog({ eventId, open, onOpenChange, defaultTab = "
       if (editingGuestId) {
         await updateGuest(editingGuestId, {
           name: guestForm.name.trim(),
-          email: guestForm.email.trim() || null,
+          email: guestForm.email.trim() || undefined,
         })
         toast({
           title: "Guest updated",
           description: "The guest information has been updated successfully.",
         })
+        resetGuestForm()
       } else {
-        await addGuest({
+        const result = await addGuest({
           eventId: event.id,
           name: guestForm.name.trim(),
           email: guestForm.email.trim() || undefined,
           checkedInBy: undefined,
         })
-        toast({
-          title: "Guest added",
-          description: "A new guest has been added to the event.",
-        })
+        
+        if (result) {
+          toast({
+            title: "Guest added successfully",
+            description: `${guestForm.name.trim()} has been added to the event.`,
+          })
+          resetGuestForm()
+        }
       }
-      resetGuestForm()
     } catch (error) {
       console.error("Failed to save guest", error)
-      toast({
-        title: "Guest action failed",
-        description: "There was an issue saving the guest. Please try again.",
-        variant: "destructive",
-      })
+      const errorMessage = error instanceof Error ? error.message : "There was an issue saving the guest."
+      
+      // Check if it's a duplicate error
+      if (errorMessage.includes("already exists")) {
+        toast({
+          title: "This guest already exists",
+          description: "A guest with the same name and email is already registered for this event.",
+          variant: "destructive",
+        })
+      } else {
+        toast({
+          title: "Guest action failed",
+          description: errorMessage,
+          variant: "destructive",
+        })
+      }
     } finally {
       setIsGuestSubmitting(false)
     }
@@ -233,8 +461,8 @@ export function EventDetailsDialog({ eventId, open, onOpenChange, defaultTab = "
       if (guest.checkedIn) {
         await updateGuest(guest.id, {
           checkedIn: false,
-          checkedInAt: null,
-          checkedInBy: null,
+          checkedInAt: undefined,
+          checkedInBy: undefined,
         })
         toast({
           title: "Guest marked as not checked in",
@@ -245,7 +473,7 @@ export function EventDetailsDialog({ eventId, open, onOpenChange, defaultTab = "
         await updateGuest(guest.id, {
           checkedIn: true,
           checkedInAt,
-          checkedInBy: user?.name || "Admin",
+          checkedInBy: user?.email || "Admin",
         })
         toast({
           title: "Guest checked in",
@@ -279,6 +507,9 @@ export function EventDetailsDialog({ eventId, open, onOpenChange, defaultTab = "
 
     setIsSubmitting(true)
     try {
+      // Check if status is changing to "completed"
+      const isChangingToCompleted = formState.status === "completed" && event.status !== "completed"
+
       await updateEvent(event.id, {
         title: formState.title,
         description: formState.description,
@@ -287,10 +518,33 @@ export function EventDetailsDialog({ eventId, open, onOpenChange, defaultTab = "
         status: formState.status,
       })
 
-      toast({
-        title: "Event updated",
-        description: "Your changes have been saved successfully.",
-      })
+      // If event is being marked as completed, mark all checked-in guests as attended
+      if (isChangingToCompleted) {
+        try {
+          const updatedGuests = await SupabaseGuestService.markGuestsAsAttended(event.id)
+          
+          // Refresh the guest list to show updated attendance status
+          await getGuestsByEvent(event.id)
+          
+          toast({
+            title: "Event completed",
+            description: `Event marked as completed. ${updatedGuests.length} checked-in guest(s) marked as attended.`,
+          })
+        } catch (error) {
+          console.error("Failed to mark guests as attended:", error)
+          toast({
+            title: "Warning",
+            description: "Event updated but failed to mark guests as attended. Please try again.",
+            variant: "destructive",
+          })
+        }
+      } else {
+        toast({
+          title: "Event updated",
+          description: "Your changes have been saved successfully.",
+        })
+      }
+      
       setIsEditing(false)
     } catch (error) {
       console.error("Failed to update event", error)
@@ -306,8 +560,8 @@ export function EventDetailsDialog({ eventId, open, onOpenChange, defaultTab = "
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[700px] max-h-[80vh] overflow-y-auto">
-        <DialogHeader>
+      <DialogContent className="max-w-[95vw] w-full lg:max-w-[1400px] h-[90vh] flex flex-col p-0">
+        <DialogHeader className="px-6 pt-6 pb-4 border-b flex-shrink-0">
           <div className="flex items-start justify-between">
             <div>
               <DialogTitle className="text-xl">
@@ -351,27 +605,36 @@ export function EventDetailsDialog({ eventId, open, onOpenChange, defaultTab = "
                       </Button>
                     </>
                   ) : (
-                    <Button variant="outline" size="sm" onClick={() => setIsEditing(true)}>
+                    <Button variant="outline" size="sm" onClick={() => setIsEditing(true)} disabled={isEventCompleted}>
                       Edit
                     </Button>
                   )}
                 </div>
-              ) : isReadOnlyAdminView ? (
-                <Badge variant="secondary">View only</Badge>
               ) : null}
+              {isReadOnly && (
+                <Badge variant="secondary">{isEventCompleted ? "Completed - Read Only" : "View only"}</Badge>
+              )}
             </div>
           </div>
         </DialogHeader>
 
-        <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-          <TabsList className="grid w-full grid-cols-4">
+        <Tabs value={activeTab} onValueChange={setActiveTab} className="flex-1 flex flex-col overflow-hidden">
+          <TabsList className="grid w-full grid-cols-3 mx-6 mt-4 flex-shrink-0">
             <TabsTrigger value="overview">Overview</TabsTrigger>
             <TabsTrigger value="guests">Guests</TabsTrigger>
-            <TabsTrigger value="qr-codes">QR Codes</TabsTrigger>
             <TabsTrigger value="analytics">Analytics</TabsTrigger>
           </TabsList>
 
-          <TabsContent value="overview" className="space-y-4">
+          <TabsContent value="overview" className="flex-1 overflow-y-auto px-6 pb-6 space-y-4 mt-4">
+            {isEventCompleted && (
+              <Alert>
+                <ShieldAlert className="h-4 w-4" />
+                <AlertTitle>Event Completed</AlertTitle>
+                <AlertDescription>
+                  This event has been marked as completed. All editing and guest management features are disabled. You can still view data and export reports.
+                </AlertDescription>
+              </Alert>
+            )}
             <div className="grid gap-4 md:grid-cols-2">
               <Card>
                 <CardHeader className="pb-3">
@@ -455,25 +718,57 @@ export function EventDetailsDialog({ eventId, open, onOpenChange, defaultTab = "
               </Card>
             </div>
 
-            {showAdminControls && (
+            {showAdminControls && !isEventCompleted && (
               <div className="flex flex-wrap gap-2">
-                <Button variant="outline" size="sm">
+                <Button variant="outline" size="sm" onClick={() => setIsUploadDialogOpen(true)}>
                   <Upload className="mr-2 h-4 w-4" />
                   Upload Guests
                 </Button>
-                <Button variant="outline" size="sm" onClick={() => setActiveTab("qr-codes")}>
-                  <QrCode className="mr-2 h-4 w-4" />
-                  Generate QR Codes
-                </Button>
-                <Button variant="outline" size="sm">
-                  <Download className="mr-2 h-4 w-4" />
-                  Export Data
-                </Button>
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button variant="outline" size="sm" disabled={isSendingInvites}>
+                      {isSendingInvites ? (
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      ) : (
+                        <Mail className="mr-2 h-4 w-4" />
+                      )}
+                      Send Invitations
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end">
+                    <DropdownMenuItem onClick={() => handleSendInvitations(true)}>
+                      <Send className="mr-2 h-4 w-4" />
+                      Send to All Guests
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => setActiveTab("guests")}>
+                      <Users className="mr-2 h-4 w-4" />
+                      Select Specific Guests
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button variant="outline" size="sm">
+                      <Download className="mr-2 h-4 w-4" />
+                      Export Data
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end">
+                    <DropdownMenuItem onClick={handleExportExcel}>
+                      <FileSpreadsheet className="mr-2 h-4 w-4" />
+                      Export as Excel
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onClick={handleExportPDF}>
+                      <FileText className="mr-2 h-4 w-4" />
+                      Export as PDF Report
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
               </div>
             )}
           </TabsContent>
 
-          <TabsContent value="guests">
+          <TabsContent value="guests" className="flex-1 overflow-y-auto px-6 pb-6 mt-4">
             <Card>
               <CardHeader>
                 <CardTitle className="text-base">Guest List ({filteredGuests.length})</CardTitle>
@@ -489,8 +784,28 @@ export function EventDetailsDialog({ eventId, open, onOpenChange, defaultTab = "
                       className="w-full md:w-72"
                     />
                   </div>
-                  {showAdminControls && (
-                    <div className="flex items-center gap-2">
+                  {showAdminControls && !isEventCompleted && (
+                    <div className="flex items-center gap-2 flex-wrap">
+                      {selectedGuests.size > 0 && (
+                        <>
+                          <Badge variant="secondary" className="text-sm">
+                            {selectedGuests.size} selected
+                          </Badge>
+                          <Button
+                            variant="default"
+                            size="sm"
+                            onClick={() => handleSendInvitations(false)}
+                            disabled={isSendingInvites}
+                          >
+                            {isSendingInvites ? (
+                              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                            ) : (
+                              <Send className="mr-2 h-4 w-4" />
+                            )}
+                            Send to Selected
+                          </Button>
+                        </>
+                      )}
                       {editingGuestId ? (
                         <Button
                           variant="ghost"
@@ -515,7 +830,7 @@ export function EventDetailsDialog({ eventId, open, onOpenChange, defaultTab = "
                   <p className="text-sm text-destructive">{guestFormErrors}</p>
                 ) : null}
 
-                {showAdminControls && (
+                {showAdminControls && !isEventCompleted && (
                   <div className="grid gap-3 md:grid-cols-2">
                     <div className="space-y-2">
                       <label className="text-sm font-medium" htmlFor="guest-name">
@@ -551,13 +866,23 @@ export function EventDetailsDialog({ eventId, open, onOpenChange, defaultTab = "
                     <p className="text-muted-foreground">No guests match your filters yet.</p>
                   </div>
                 ) : (
-                  <div className="overflow-x-auto">
+                  <div className="overflow-x-auto max-h-[400px] overflow-y-auto">
                     <Table>
                       <TableHeader>
                         <TableRow>
+                          {showAdminControls && !isEventCompleted && (
+                            <TableHead className="w-12">
+                              <Checkbox
+                                checked={selectedGuests.size === filteredGuests.length && filteredGuests.length > 0}
+                                onCheckedChange={toggleSelectAll}
+                                aria-label="Select all guests"
+                              />
+                            </TableHead>
+                          )}
                           <TableHead>Name</TableHead>
                           <TableHead className="hidden md:table-cell">Email</TableHead>
                           <TableHead>Code</TableHead>
+                          <TableHead className="hidden lg:table-cell">Invitation</TableHead>
                           <TableHead className="text-center">Status</TableHead>
                           <TableHead className="text-right">Actions</TableHead>
                         </TableRow>
@@ -565,6 +890,15 @@ export function EventDetailsDialog({ eventId, open, onOpenChange, defaultTab = "
                       <TableBody>
                         {filteredGuests.map((guest) => (
                           <TableRow key={guest.id}>
+                            {showAdminControls && !isEventCompleted && (
+                              <TableCell>
+                                <Checkbox
+                                  checked={selectedGuests.has(guest.id)}
+                                  onCheckedChange={() => toggleGuestSelection(guest.id)}
+                                  aria-label={`Select ${guest.name}`}
+                                />
+                              </TableCell>
+                            )}
                             <TableCell className="font-medium">
                               <div className="flex flex-col">
                                 <span>{guest.name}</span>
@@ -573,6 +907,25 @@ export function EventDetailsDialog({ eventId, open, onOpenChange, defaultTab = "
                             </TableCell>
                             <TableCell className="hidden md:table-cell">{guest.email || "—"}</TableCell>
                             <TableCell className="font-mono text-sm">{guest.uniqueCode}</TableCell>
+                            <TableCell className="hidden lg:table-cell">
+                              {guest.invitationSent ? (
+                                <div className="flex flex-col">
+                                  <Badge variant="outline" className="inline-flex items-center gap-1 w-fit">
+                                    <Mail className="h-3 w-3" />
+                                    Sent
+                                  </Badge>
+                                  {guest.invitationSentAt && (
+                                    <span className="text-xs text-muted-foreground mt-1">
+                                      {new Date(guest.invitationSentAt).toLocaleDateString()}
+                                    </span>
+                                  )}
+                                </div>
+                              ) : (
+                                <Badge variant="secondary" className="inline-flex items-center gap-1">
+                                  Not sent
+                                </Badge>
+                              )}
+                            </TableCell>
                             <TableCell className="text-center">
                               <Badge variant={guest.checkedIn ? "default" : "secondary"} className="inline-flex items-center gap-2">
                                 {guest.checkedIn ? <Check className="h-3 w-3" /> : null}
@@ -581,16 +934,7 @@ export function EventDetailsDialog({ eventId, open, onOpenChange, defaultTab = "
                             </TableCell>
                             <TableCell>
                               <div className="flex items-center justify-end gap-2">
-                                <Button
-                                  variant="ghost"
-                                  size="icon"
-                                  className="h-8 w-8"
-                                  onClick={() => downloadGuestQR(guest)}
-                                  title="Download QR code"
-                                >
-                                  <Download className="h-4 w-4" />
-                                </Button>
-                                {showAdminControls ? (
+                                {showAdminControls && !isEventCompleted ? (
                                   <>
                                     <Button
                                       variant="ghost"
@@ -629,6 +973,8 @@ export function EventDetailsDialog({ eventId, open, onOpenChange, defaultTab = "
                                       <Trash2 className="h-4 w-4" />
                                     </Button>
                                   </>
+                                ) : isEventCompleted ? (
+                                  <span className="text-xs text-muted-foreground">Read only</span>
                                 ) : null}
                               </div>
                             </TableCell>
@@ -642,82 +988,19 @@ export function EventDetailsDialog({ eventId, open, onOpenChange, defaultTab = "
             </Card>
           </TabsContent>
 
-          <TabsContent value="qr-codes">
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-base">QR Code Management</CardTitle>
-                <CardDescription>Generate and download QR codes for guests</CardDescription>
-              </CardHeader>
-              <CardContent>
-                {eventGuests.length === 0 ? (
-                  <div className="text-center py-8">
-                    <QrCode className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
-                    <p className="text-muted-foreground">Add guests to this event to generate QR codes.</p>
-                  </div>
-                ) : (
-                  <div className="space-y-4">
-                    <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3 max-h-60 overflow-y-auto">
-                      {eventGuests.slice(0, 6).map((guest) => {
-                        const qrData = generateQRCodeData(event.id, guest.uniqueCode)
-                        const qrSvg = generateQRCodeSVG(qrData, 80)
-
-                        return (
-                          <div key={guest.id} className="flex items-center space-x-3 p-3 border rounded-lg">
-                            <div
-                              className="border rounded p-1 bg-white flex-shrink-0"
-                              dangerouslySetInnerHTML={{ __html: qrSvg }}
-                            />
-                            <div className="flex-1 min-w-0">
-                              <p className="font-medium text-sm truncate">{guest.name}</p>
-                              <p className="text-xs text-muted-foreground font-mono">{guest.uniqueCode}</p>
-                              <Button
-                                size="sm"
-                                variant="outline"
-                                className="mt-1 h-6 text-xs bg-transparent"
-                                onClick={() => downloadGuestQR(guest)}
-                              >
-                                <Download className="mr-1 h-3 w-3" />
-                                PNG
-                              </Button>
-                            </div>
-                          </div>
-                        )
-                      })}
-                    </div>
-
-                    {eventGuests.length > 6 && (
-                      <div className="text-center">
-                        <p className="text-sm text-muted-foreground mb-2">
-                          ... and {eventGuests.length - 6} more guests
-                        </p>
-                        <Button variant="outline" size="sm">
-                          <QrCode className="mr-2 h-4 w-4" />
-                          View All QR Codes
-                        </Button>
-                      </div>
-                    )}
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-          </TabsContent>
-
-          <TabsContent value="analytics">
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-base flex items-center">
-                  <BarChart3 className="mr-2 h-4 w-4" />
-                  Event Analytics
-                </CardTitle>
-                <CardDescription>Detailed insights and statistics</CardDescription>
-              </CardHeader>
-              <CardContent>
-                <p className="text-muted-foreground">Analytics dashboard coming in next step...</p>
-              </CardContent>
-            </Card>
+          <TabsContent value="analytics" className="flex-1 overflow-y-auto px-6 pb-6 mt-4">
+            <AnalyticsDashboard eventId={eventId} />
           </TabsContent>
         </Tabs>
       </DialogContent>
+
+      {/* Guest Upload Dialog */}
+      <GuestUploadDialog
+        eventId={eventId}
+        eventTitle={event.title}
+        open={isUploadDialogOpen}
+        onOpenChange={setIsUploadDialogOpen}
+      />
     </Dialog>
   )
 }

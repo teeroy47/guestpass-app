@@ -80,8 +80,6 @@ export class EventService {
           venue,
           owner_id,
           created_at,
-          total_guests,
-          checked_in_guests,
           status
         `,
       )
@@ -104,7 +102,49 @@ export class EventService {
       throw error
     }
 
-    return (data ?? []).map((row) => serializeEvent(row as SupabaseEventRow))
+    // Fetch guest counts for all events
+    const eventIds = (data ?? []).map((event) => event.id)
+    const guestCounts = await this.getGuestCounts(eventIds)
+
+    return (data ?? []).map((row) => {
+      const counts = guestCounts[row.id] || { total: 0, checkedIn: 0 }
+      return serializeEvent({
+        ...row,
+        total_guests: counts.total,
+        checked_in_guests: counts.checkedIn,
+      } as SupabaseEventRow)
+    })
+  }
+
+  private static async getGuestCounts(eventIds: string[]): Promise<Record<string, { total: number; checkedIn: number }>> {
+    if (eventIds.length === 0) {
+      return {}
+    }
+
+    const client = await this.getClient()
+    const { data, error } = await client
+      .from("guests")
+      .select("event_id, checked_in")
+      .in("event_id", eventIds)
+
+    if (error) {
+      console.error("Failed to fetch guest counts:", error)
+      return {}
+    }
+
+    const counts: Record<string, { total: number; checkedIn: number }> = {}
+    
+    for (const guest of data ?? []) {
+      if (!counts[guest.event_id]) {
+        counts[guest.event_id] = { total: 0, checkedIn: 0 }
+      }
+      counts[guest.event_id].total++
+      if (guest.checked_in) {
+        counts[guest.event_id].checkedIn++
+      }
+    }
+
+    return counts
   }
 
   static async getEvent(id: string) {
@@ -120,8 +160,6 @@ export class EventService {
           venue,
           owner_id,
           created_at,
-          total_guests,
-          checked_in_guests,
           status
         `,
       )
@@ -136,7 +174,15 @@ export class EventService {
       return null
     }
 
-    return serializeEvent(data as SupabaseEventRow)
+    // Fetch guest counts for this event
+    const guestCounts = await this.getGuestCounts([id])
+    const counts = guestCounts[id] || { total: 0, checkedIn: 0 }
+
+    return serializeEvent({
+      ...data,
+      total_guests: counts.total,
+      checked_in_guests: counts.checkedIn,
+    } as SupabaseEventRow)
   }
 
   static async createEvent(input: CreateEventInput) {
@@ -160,8 +206,6 @@ export class EventService {
           venue,
           owner_id,
           created_at,
-          total_guests,
-          checked_in_guests,
           status
         `,
       )
@@ -175,7 +219,12 @@ export class EventService {
       throw new Error("Failed to create event: Supabase returned no data.")
     }
 
-    return serializeEvent(data as SupabaseEventRow)
+    // New events have no guests yet
+    return serializeEvent({
+      ...data,
+      total_guests: 0,
+      checked_in_guests: 0,
+    } as SupabaseEventRow)
   }
 
   static async updateEvent(id: string, updates: Partial<CreateEventInput>) {
@@ -214,8 +263,6 @@ export class EventService {
           venue,
           owner_id,
           created_at,
-          total_guests,
-          checked_in_guests,
           status
         `,
       )
@@ -229,7 +276,15 @@ export class EventService {
       return null
     }
 
-    return serializeEvent(data as SupabaseEventRow)
+    // Fetch guest counts for this event
+    const guestCounts = await this.getGuestCounts([id])
+    const counts = guestCounts[id] || { total: 0, checkedIn: 0 }
+
+    return serializeEvent({
+      ...data,
+      total_guests: counts.total,
+      checked_in_guests: counts.checkedIn,
+    } as SupabaseEventRow)
   }
 
   static async deleteEvent(id: string) {
