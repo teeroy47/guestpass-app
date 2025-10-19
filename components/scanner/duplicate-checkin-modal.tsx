@@ -1,10 +1,11 @@
 "use client"
 
+import { useState } from "react"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
-import { CheckCircle, Clock, User, Mail, Phone, X } from "lucide-react"
+import { CheckCircle, Clock, User, Mail, Phone, X, Loader2 } from "lucide-react"
 import { formatDistanceToNow } from "date-fns"
 
 interface DuplicateCheckinModalProps {
@@ -22,6 +23,9 @@ interface DuplicateCheckinModalProps {
 }
 
 export function DuplicateCheckinModal({ open, onClose, guest }: DuplicateCheckinModalProps) {
+  const [imageLoading, setImageLoading] = useState(true)
+  const [imageError, setImageError] = useState(false)
+
   // Debug logging
   console.log("[DuplicateCheckinModal] Guest data:", {
     name: guest.name,
@@ -60,25 +64,34 @@ export function DuplicateCheckinModal({ open, onClose, guest }: DuplicateCheckin
         <div className="space-y-6">
           {/* Guest Photo and Name */}
           <div className="flex flex-col items-center gap-4 py-4">
-            <Avatar className="h-32 w-32 border-4 border-orange-100">
-              {guest.photoUrl && (
-                <AvatarImage 
-                  src={guest.photoUrl} 
-                  alt={guest.name}
-                  onError={(e) => {
-                    console.error("[DuplicateCheckinModal] Failed to load image:", guest.photoUrl)
-                    // Hide the broken image element
-                    e.currentTarget.style.display = 'none'
-                  }}
-                  onLoad={() => {
-                    console.log("[DuplicateCheckinModal] Image loaded successfully:", guest.photoUrl)
-                  }}
-                />
+            <div className="relative">
+              <Avatar className="h-32 w-32 border-4 border-orange-100">
+                {guest.photoUrl && !imageError && (
+                  <AvatarImage 
+                    src={guest.photoUrl} 
+                    alt={guest.name}
+                    onError={(e) => {
+                      console.error("[DuplicateCheckinModal] Failed to load image:", guest.photoUrl)
+                      setImageError(true)
+                      setImageLoading(false)
+                    }}
+                    onLoad={() => {
+                      console.log("[DuplicateCheckinModal] Image loaded successfully:", guest.photoUrl)
+                      setImageLoading(false)
+                    }}
+                  />
+                )}
+                <AvatarFallback className="text-3xl bg-gradient-to-br from-orange-400 to-orange-600 text-white">
+                  {getInitials(guest.name)}
+                </AvatarFallback>
+              </Avatar>
+              {/* Loading spinner overlay */}
+              {guest.photoUrl && imageLoading && !imageError && (
+                <div className="absolute inset-0 flex items-center justify-center bg-black/20 rounded-full">
+                  <Loader2 className="h-8 w-8 text-white animate-spin" />
+                </div>
               )}
-              <AvatarFallback className="text-3xl bg-gradient-to-br from-orange-400 to-orange-600 text-white">
-                {getInitials(guest.name)}
-              </AvatarFallback>
-            </Avatar>
+            </div>
 
             <div className="text-center">
               <h3 className="text-2xl font-bold text-gray-900">{guest.name}</h3>

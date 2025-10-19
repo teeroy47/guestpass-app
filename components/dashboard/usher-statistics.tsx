@@ -25,18 +25,21 @@ export function UsherStatistics() {
   const [usherStats, setUsherStats] = useState<UsherStats[]>([])
   const supabaseClient = useRef(createBrowserSupabaseClient())
 
-  // Filter events that have at least one checked-in guest
-  const eventsWithCheckIns = events.filter((event) => {
+  // Filter for active events only (with at least one checked-in guest)
+  const activeEventsWithCheckIns = events.filter((event) => {
+    // Only show active events
+    if (event.status !== "active") return false
+    
     const eventGuests = guests.filter((g) => g.eventId === event.id)
     return eventGuests.some((g) => g.checkedIn)
   })
 
-  // Auto-select first event with check-ins
+  // Auto-select first active event with check-ins (or only active event if just one)
   useEffect(() => {
-    if (!selectedEventId && eventsWithCheckIns.length > 0) {
-      setSelectedEventId(eventsWithCheckIns[0].id)
+    if (!selectedEventId && activeEventsWithCheckIns.length > 0) {
+      setSelectedEventId(activeEventsWithCheckIns[0].id)
     }
-  }, [eventsWithCheckIns, selectedEventId])
+  }, [activeEventsWithCheckIns, selectedEventId])
 
   // Calculate usher statistics for selected event
   useEffect(() => {
@@ -182,7 +185,7 @@ export function UsherStatistics() {
   const topUsher = usherStats[0]
   const totalScans = usherStats.reduce((sum, stat) => sum + stat.totalScans, 0)
 
-  if (eventsWithCheckIns.length === 0) {
+  if (activeEventsWithCheckIns.length === 0) {
     return (
       <Card>
         <CardHeader>
@@ -192,9 +195,9 @@ export function UsherStatistics() {
         <CardContent className="space-y-4">
           <div className="text-center py-8">
             <Users className="h-12 w-12 text-muted-foreground mx-auto mb-4 opacity-50" />
-            <p className="text-sm text-muted-foreground">No check-ins recorded yet</p>
+            <p className="text-sm text-muted-foreground">No active events with check-ins</p>
             <p className="text-xs text-muted-foreground mt-1">
-              Usher statistics will appear here once guests start checking in
+              Usher statistics will appear here once guests check in to active events
             </p>
           </div>
         </CardContent>
@@ -222,27 +225,37 @@ export function UsherStatistics() {
         </div>
       </CardHeader>
       <CardContent className="space-y-6">
-        {/* Event Selector */}
-        <div className="space-y-2">
-          <label className="text-sm font-medium">Select Event</label>
-          <Select value={selectedEventId} onValueChange={setSelectedEventId}>
-            <SelectTrigger>
-              <SelectValue placeholder="Choose an event" />
-            </SelectTrigger>
-            <SelectContent>
-              {eventsWithCheckIns.map((event) => {
-                const eventGuestsCount = guests.filter(
-                  (g) => g.eventId === event.id && g.checkedIn
-                ).length
-                return (
-                  <SelectItem key={event.id} value={event.id}>
-                    {event.title} ({eventGuestsCount} check-ins)
-                  </SelectItem>
-                )
-              })}
-            </SelectContent>
-          </Select>
-        </div>
+        {/* Event Selector - Only show if more than one active event */}
+        {activeEventsWithCheckIns.length > 1 && (
+          <div className="space-y-2">
+            <label className="text-sm font-medium">Select Active Event</label>
+            <Select value={selectedEventId} onValueChange={setSelectedEventId}>
+              <SelectTrigger>
+                <SelectValue placeholder="Choose an event" />
+              </SelectTrigger>
+              <SelectContent>
+                {activeEventsWithCheckIns.map((event) => {
+                  const eventGuestsCount = guests.filter(
+                    (g) => g.eventId === event.id && g.checkedIn
+                  ).length
+                  return (
+                    <SelectItem key={event.id} value={event.id}>
+                      {event.title} ({eventGuestsCount} check-ins)
+                    </SelectItem>
+                  )
+                })}
+              </SelectContent>
+            </Select>
+          </div>
+        )}
+        
+        {/* Show event name if only one active event */}
+        {activeEventsWithCheckIns.length === 1 && selectedEvent && (
+          <div className="text-center p-3 bg-primary/10 rounded-lg border border-primary/20">
+            <p className="text-sm font-medium text-primary">Active Event</p>
+            <p className="text-lg font-bold">{selectedEvent.title}</p>
+          </div>
+        )}
 
         {/* Summary Stats */}
         {selectedEvent && (

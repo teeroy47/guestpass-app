@@ -14,6 +14,9 @@ interface AuthContextType {
   signInWithOtp: (email: string) => Promise<{ error: string | null }>
   signInWithPassword: (email: string, password: string) => Promise<{ error: string | null }>
   signUpWithPassword: (email: string, password: string, displayName?: string) => Promise<{ error: string | null }>
+  resetPassword: (email: string) => Promise<{ error: string | null }>
+  updatePassword: (newPassword: string) => Promise<{ error: string | null }>
+  resendConfirmationEmail: (email: string) => Promise<{ error: string | null }>
   signOut: () => Promise<void>
 }
 
@@ -67,8 +70,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const fullName =
       typeof metadataFullName === "string" && metadataFullName.trim().length > 0 ? metadataFullName : email
 
+    // Determine role: only chiunyet@africau.edu gets admin, everyone else gets usher
     const metadataRole = authUser.app_metadata?.role
-    const role = typeof metadataRole === "string" && metadataRole.trim().length > 0 ? metadataRole : "admin"
+    let role: string
+    
+    if (metadataRole && typeof metadataRole === "string" && metadataRole.trim().length > 0) {
+      // Use existing role from metadata
+      role = metadataRole
+    } else if (email.toLowerCase() === "chiunyet@africau.edu") {
+      // Admin email gets admin role
+      role = "admin"
+    } else {
+      // All other users get usher role by default
+      role = "usher"
+    }
 
     try {
       const { error } = await supabase
@@ -87,7 +102,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         console.error("[auth] ensureUserProfile error", error)
         // Don't throw - we want to continue even if profile creation fails
       } else {
-        console.log("[auth] ensureUserProfile success", authUser.id)
+        console.log("[auth] ensureUserProfile success", authUser.id, "with role:", role)
         
         // Fetch display name after ensuring profile
         const name = await fetchDisplayName(authUser.id)
@@ -217,7 +232,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [supabase, ensureUserProfile])
 
   const signInWithOtp = useCallback(async (email: string) => {
-    const { error } = await supabase.auth.signInWithOtp({ email, options: { emailRedirectTo: `${window.location.origin}` } })
+    const redirectUrl = import.meta.env.VITE_APP_URL || window.location.origin
+    const { error } = await supabase.auth.signInWithOtp({ email, options: { emailRedirectTo: redirectUrl } })
     if (error) {
       console.error("[auth] Sign in with OTP failed", error)
       return { error: error.message }
@@ -236,6 +252,27 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [supabase])
 
   const signUpWithPassword = useCallback(async (email: string, password: string, displayName?: string) => {
+    // Check if user already exists
+    try {
+      const { data: existingUsers, error: checkError } = await supabase
+        .from("users")
+        .select("email")
+        .eq("email", email.toLowerCase())
+        .limit(1)
+
+      if (checkError) {
+        console.error("[auth] Error checking for existing user", checkError)
+        // Continue with signup attempt even if check fails
+      } else if (existingUsers && existingUsers.length > 0) {
+        console.log("[auth] User with this email already exists")
+        return { error: "An account with this email already exists. Please sign in instead." }
+      }
+    } catch (err) {
+      console.error("[auth] Unexpected error checking for existing user", err)
+      // Continue with signup attempt
+    }
+
+    const redirectUrl = `${import.meta.env.VITE_APP_URL || window.location.origin}/auth/callback`
     const {
       data: { user },
       error,
@@ -243,12 +280,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       email, 
       password,
       options: {
-        emailRedirectTo: `${window.location.origin}`
+        emailRedirectTo: redirectUrl,
+        data: {
+          display_name: displayName?.trim() || email,
+        }
       }
     })
 
     if (error) {
       console.error("[auth] Password sign-up failed", error)
+      // Handle specific Supabase error for existing user
+      if (error.message.includes("already registered") || error.message.includes("already exists")) {
+        return { error: "An account with this email already exists. Please sign in instead." }
+      }
       return { error: error.message }
     }
 
@@ -305,6 +349,54 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, [user, supabase])
 
+  const resetPassword = useCallback(async (email: string) => {
+    const redirectUrl = `${import.meta.env.VITE_APP_URL || window.location.origin}/reset-password`
+    const { error } = await supabase.auth.resetPasswordForEmail(email, {
+      redirectTo: redirectUrl,
+    })
+    
+    if (error) {
+      console.error("[auth] Password reset request failed", error)
+      return { error: error.message }
+    }
+    
+    console.log("[auth] Password reset email sent")
+    return { error: null }
+  }, [supabase])
+
+  const updatePassword = useCallback(async (newPassword: string) => {
+    const { error } = await supabase.auth.updateUser({
+      password: newPassword,
+    })
+    
+    if (error) {
+      console.error("[auth] Password update failed", error)
+      return { error: error.message }
+    }
+    
+    console.log("[auth] Password updated successfully")
+    return { error: null }
+  }, [supabase])
+
+  const resendConfirmationEmail = useCallback(async (email: string) => {
+    const redirectUrl = `${import.meta.env.VITE_APP_URL || window.location.origin}/auth/callback`
+    const { error } = await supabase.auth.resend({
+      type: 'signup',
+      email: email,
+      options: {
+        emailRedirectTo: redirectUrl,
+      }
+    })
+    
+    if (error) {
+      console.error("[auth] Resend confirmation email failed", error)
+      return { error: error.message }
+    }
+    
+    console.log("[auth] Confirmation email resent successfully")
+    return { error: null }
+  }, [supabase])
+
   const signOut = useCallback(async () => {
     console.log("[auth] Signing out")
     
@@ -342,10 +434,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         signInWithOtp,
         signInWithPassword,
         signUpWithPassword,
+        resetPassword,
+        updatePassword,
+        resendConfirmationEmail,
         signOut,
       }
     },
-    [user, loading, displayName, loadCurrentUser, updateDisplayName, signInWithOtp, signInWithPassword, signUpWithPassword, signOut],
+    [user, loading, displayName, loadCurrentUser, updateDisplayName, signInWithOtp, signInWithPassword, signUpWithPassword, resetPassword, updatePassword, resendConfirmationEmail, signOut],
   )
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>

@@ -21,7 +21,7 @@ interface QRScannerProps {
 }
 
 type ScanResultState = {
-  type: "success" | "duplicate" | "error"
+  type: "success" | "duplicate" | "error" | "step1-complete"
   message: string
   guest?: any
   timestamp?: string
@@ -35,6 +35,7 @@ export function QRScanner({ eventId, onClose }: QRScannerProps) {
   const [cameraId, setCameraId] = useState<string | null>(null)
   const [showPhotoCapture, setShowPhotoCapture] = useState(false)
   const [showDuplicateModal, setShowDuplicateModal] = useState(false)
+  const [currentStep, setCurrentStep] = useState<1 | 2>(1) // Track current step
   const [pendingCheckIn, setPendingCheckIn] = useState<{
     uniqueCode: string
     guestName: string
@@ -93,16 +94,17 @@ export function QRScanner({ eventId, onClose }: QRScannerProps) {
           soundEffects.playSuccessTone()
           setLastScanResult({
             type: "success",
-            message: `${result.guest?.name} checked in successfully (no photo)`,
+            message: `Check-in completed (no photo). Ready for next guest.`,
             guest: result.guest,
             timestamp: new Date().toLocaleTimeString("en-US", { hour12: false }),
           })
 
-          // Reset after 1 second
+          // Reset to Step 1 after 2 seconds
           setTimeout(() => {
             isProcessingRef.current = false
             setLastScanResult(null)
-          }, 1000)
+            setCurrentStep(1)
+          }, 2000)
         }
 
         // Refresh guests to get updated data
@@ -116,6 +118,7 @@ export function QRScanner({ eventId, onClose }: QRScannerProps) {
         setTimeout(() => {
           isProcessingRef.current = false
           setLastScanResult(null)
+          setCurrentStep(1)
         }, 2000)
       } finally {
         setPendingCheckIn(null)
@@ -136,13 +139,13 @@ export function QRScanner({ eventId, onClose }: QRScannerProps) {
           originalBlobSize: photoBlob.size,
         })
 
-        // Compress photo for faster upload
+        // Compress photo for faster upload (increased resolution for better quality)
         const compressedBlob = await compressImage(
           new File([photoBlob], "photo.jpg", { type: "image/jpeg" }),
           {
-            maxWidth: 800,
-            maxHeight: 800,
-            quality: 0.85,
+            maxWidth: 1200,
+            maxHeight: 1200,
+            quality: 0.9,
             format: "jpeg",
           }
         )
@@ -186,16 +189,17 @@ export function QRScanner({ eventId, onClose }: QRScannerProps) {
           soundEffects.playSuccessTone()
           setLastScanResult({
             type: "success",
-            message: `${result.guest?.name} checked in successfully!`,
+            message: `Photo uploaded successfully! Ready for next guest.`,
             guest: result.guest,
             timestamp: new Date().toLocaleTimeString("en-US", { hour12: false }),
           })
 
-          // Reset after 1 second
+          // Reset to Step 1 after 2 seconds
           setTimeout(() => {
             isProcessingRef.current = false
             setLastScanResult(null)
-          }, 1000)
+            setCurrentStep(1)
+          }, 2000)
         }
 
         // Refresh guests to get updated data
@@ -209,6 +213,7 @@ export function QRScanner({ eventId, onClose }: QRScannerProps) {
         setTimeout(() => {
           isProcessingRef.current = false
           setLastScanResult(null)
+          setCurrentStep(1)
         }, 2000)
       } finally {
         setPendingCheckIn(null)
@@ -266,13 +271,30 @@ export function QRScanner({ eventId, onClose }: QRScannerProps) {
           return
         }
 
-        // First check-in - capture photo
+        // Step 1 Complete: QR Code scanned successfully
+        soundEffects.playSuccessTone()
+        setCurrentStep(1)
+        setLastScanResult({
+          type: "step1-complete",
+          message: `✓ Step 1 Complete: ${guest.name} identified`,
+          guest: guest,
+          timestamp: new Date().toLocaleTimeString("en-US", { hour12: false }),
+        })
+
+        // Store pending check-in data
         setPendingCheckIn({
           uniqueCode,
           guestName: guest.name,
           guestId: guest.id,
         })
-        setShowPhotoCapture(true)
+
+        // Wait 1.5 seconds then proceed to Step 2
+        setTimeout(() => {
+          setCurrentStep(2)
+          setLastScanResult(null)
+          setShowPhotoCapture(true)
+          isProcessingRef.current = false
+        }, 1500)
       } catch (error) {
         console.error("Failed to process QR code:", error)
         setLastScanResult({
@@ -554,7 +576,7 @@ export function QRScanner({ eventId, onClose }: QRScannerProps) {
             {lastScanResult && (
               <Card className="absolute top-20 left-1/2 transform -translate-x-1/2 w-80 max-w-[90%] bg-black/90 backdrop-blur-sm border-white/20 text-white pointer-events-auto z-20 shadow-2xl">
                 <CardContent className="p-4 flex gap-3 items-start">
-                  {lastScanResult.type === "success" ? (
+                  {lastScanResult.type === "success" || lastScanResult.type === "step1-complete" ? (
                     <CheckCircle className="h-6 w-6 text-emerald-400 shrink-0" />
                   ) : lastScanResult.type === "duplicate" ? (
                     <Clock className="h-6 w-6 text-amber-400 shrink-0" />
@@ -566,21 +588,36 @@ export function QRScanner({ eventId, onClose }: QRScannerProps) {
                       <Badge 
                         variant="outline" 
                         className={`border-white/30 uppercase tracking-wide text-xs ${
-                          lastScanResult.type === "success" 
+                          lastScanResult.type === "success" || lastScanResult.type === "step1-complete"
                             ? "text-emerald-300 border-emerald-400/50" 
                             : lastScanResult.type === "duplicate"
                             ? "text-amber-300 border-amber-400/50"
                             : "text-red-300 border-red-400/50"
                         }`}
                       >
-                        {lastScanResult.type}
+                        {lastScanResult.type === "step1-complete" ? "STEP 1" : lastScanResult.type}
                       </Badge>
                       {lastScanResult.timestamp && (
                         <span className="text-xs text-white/60">{lastScanResult.timestamp}</span>
                       )}
                     </div>
                     <p className="text-sm leading-snug font-medium">{lastScanResult.message}</p>
-                    {lastScanResult.guest?.name && (
+                    {lastScanResult.type === "step1-complete" && lastScanResult.guest && (
+                      <div className="mt-2 space-y-1">
+                        <div className="flex items-center gap-2 text-xs">
+                          <span className="text-white/60">🪑 Seating:</span>
+                          <span className="text-emerald-300 font-medium">{lastScanResult.guest.seatingArea || 'Free Seating'}</span>
+                        </div>
+                        <div className="flex items-center gap-2 text-xs">
+                          <span className="text-white/60">🍽️ Cuisine:</span>
+                          <span className="text-emerald-300 font-medium">{lastScanResult.guest.cuisineChoice || 'Traditional'}</span>
+                        </div>
+                        <p className="text-xs text-emerald-300 font-medium mt-2">
+                          → Proceeding to Step 2: Photo Capture
+                        </p>
+                      </div>
+                    )}
+                    {lastScanResult.guest?.name && lastScanResult.type !== "step1-complete" && (
                       <p className="text-xs text-white/70">Guest: {lastScanResult.guest.name}</p>
                     )}
                   </div>
@@ -620,6 +657,27 @@ export function QRScanner({ eventId, onClose }: QRScannerProps) {
       {/* Footer Tips */}
       <div className="p-4 border-t border-white/10 bg-black/70 backdrop-blur-sm">
         <div className="flex flex-col gap-3 text-white/70 text-xs sm:text-sm">
+          {/* Step Indicator */}
+          <div className="flex items-center justify-center gap-4 mb-2">
+            <div className={`flex items-center gap-2 ${currentStep === 1 ? 'text-primary font-semibold' : 'text-white/50'}`}>
+              <div className={`w-8 h-8 rounded-full flex items-center justify-center border-2 ${
+                currentStep === 1 ? 'border-primary bg-primary/20' : 'border-white/30'
+              }`}>
+                1
+              </div>
+              <span className="text-xs sm:text-sm">QR Scan</span>
+            </div>
+            <div className="w-8 h-0.5 bg-white/30"></div>
+            <div className={`flex items-center gap-2 ${currentStep === 2 ? 'text-primary font-semibold' : 'text-white/50'}`}>
+              <div className={`w-8 h-8 rounded-full flex items-center justify-center border-2 ${
+                currentStep === 2 ? 'border-primary bg-primary/20' : 'border-white/30'
+              }`}>
+                2
+              </div>
+              <span className="text-xs sm:text-sm">Photo</span>
+            </div>
+          </div>
+          
           <p className="text-center">
             💡 <span className="font-medium">Tip:</span> Ask guests to brighten their screen and hold the QR code steady
           </p>
@@ -656,6 +714,7 @@ export function QRScanner({ eventId, onClose }: QRScannerProps) {
           onClose={() => {
             setShowPhotoCapture(false)
             setPendingCheckIn(null)
+            setCurrentStep(1) // Reset to Step 1 if photo dialog is closed
             isProcessingRef.current = false
           }}
           onCapture={handlePhotoCapture}
@@ -671,6 +730,7 @@ export function QRScanner({ eventId, onClose }: QRScannerProps) {
           onClose={() => {
             setShowDuplicateModal(false)
             setDuplicateGuest(null)
+            setCurrentStep(1) // Reset to Step 1 after duplicate modal closes
             isProcessingRef.current = false
           }}
           guest={duplicateGuest}

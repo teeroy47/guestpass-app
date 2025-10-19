@@ -5,6 +5,10 @@ import { Dashboard } from "@/components/dashboard/dashboard"
 import { EventList } from "@/components/events/event-list"
 import { GuestList } from "@/components/guests/guest-list"
 import { LoginForm } from "@/components/auth/login-form"
+import { AuthCallback } from "@/components/auth/auth-callback"
+import { ForgotPassword } from "@/components/auth/forgot-password"
+import { ResetPassword } from "@/components/auth/reset-password"
+import { ResendConfirmation } from "@/components/auth/resend-confirmation"
 import { useAuth } from "@/lib/auth-context"
 import { Toaster } from "@/components/ui/toaster"
 
@@ -79,6 +83,11 @@ export default function App() {
       <main className="max-w-6xl mx-auto p-4">
         <Routes>
           <Route path="/" element={<HomePage />} />
+          <Route path="/auth/callback" element={<AuthCallback />} />
+          <Route path="/login" element={<LoginForm />} />
+          <Route path="/forgot-password" element={<ForgotPassword />} />
+          <Route path="/reset-password" element={<ResetPassword />} />
+          <Route path="/resend-confirmation" element={<ResendConfirmation />} />
           <Route
             path="/dashboard"
             element={
@@ -103,7 +112,6 @@ export default function App() {
               </ProtectedRoute>
             }
           />
-          <Route path="/login" element={<LoginForm />} />
           <Route path="*" element={<div>Page not found</div>} />
         </Routes>
       </main>

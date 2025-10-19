@@ -22,6 +22,11 @@ export function createBrowserSupabaseClient() {
       storageKey: 'guestpass-auth-token',
       flowType: 'pkce',
     },
+    global: {
+      headers: {
+        'X-Client-Info': 'guestpass-app',
+      },
+    },
   })
   
   // Log storage key to help with debugging

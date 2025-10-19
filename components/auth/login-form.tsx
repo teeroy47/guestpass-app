@@ -144,10 +144,11 @@ export function LoginForm() {
             return
           }
 
-          setSuccessMessage("Account created! You can now sign in.")
+          setSuccessMessage("Account created! Please check your email to confirm your account. After confirmation, you'll be redirected to your dashboard.")
           toast({
-            title: "Account created",
-            description: "You can now sign in with your credentials",
+            title: "Check your email",
+            description: "We've sent you a confirmation link. Click it to activate your account.",
+            duration: 8000,
           })
           form.reset({
             email,
@@ -155,7 +156,6 @@ export function LoginForm() {
             confirmPassword: "",
             displayName: "",
           })
-          setMode("login")
         } catch (error) {
           console.error("Password auth failed", error)
           setRequestError("Something went wrong. Please try again.")
@@ -301,8 +301,20 @@ export function LoginForm() {
                 )}
 
                 {successMessage ? (
-                  <div className="space-y-2 rounded-lg border border-primary/50 bg-primary/10 p-4 text-sm text-primary">
+                  <div className="space-y-3 rounded-lg border border-primary/50 bg-primary/10 p-4 text-sm text-primary">
                     <p>{successMessage}</p>
+                    {mode === "signup" && (
+                      <div className="pt-2 border-t border-primary/20">
+                        <p className="text-xs text-primary/80 mb-2">Didn't receive the email?</p>
+                        <button
+                          type="button"
+                          onClick={() => navigate(`/resend-confirmation?email=${encodeURIComponent(form.getValues("email"))}`)}
+                          className="text-xs font-medium text-primary hover:underline focus:outline-none"
+                        >
+                          Resend confirmation email
+                        </button>
+                      </div>
+                    )}
                   </div>
                 ) : null}
 
@@ -318,6 +330,18 @@ export function LoginForm() {
                     "Create account"
                   )}
                 </Button>
+
+                {mode === "login" && (
+                  <div className="text-center">
+                    <button
+                      type="button"
+                      onClick={() => navigate("/forgot-password")}
+                      className="text-sm text-muted-foreground hover:text-primary hover:underline focus:outline-none focus:ring-2 focus:ring-primary/40"
+                    >
+                      Forgot your password?
+                    </button>
+                  </div>
+                )}
 
                 <div className="flex flex-col space-y-3 text-center">
                   <p className="text-xs text-muted-foreground">

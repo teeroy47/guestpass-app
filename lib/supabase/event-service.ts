@@ -289,6 +289,49 @@ export class EventService {
 
   static async deleteEvent(id: string) {
     const client = await this.getClient()
+    
+    // Step 1: Fetch all guest photo URLs for this event before deletion
+    const { data: guests, error: fetchError } = await client
+      .from("guests")
+      .select("photo_url")
+      .eq("event_id", id)
+      .not("photo_url", "is", null)
+
+    if (fetchError) {
+      console.error("Failed to fetch guest photos for cleanup:", fetchError)
+      // Continue with deletion even if photo fetch fails
+    }
+
+    // Step 2: Delete photos from storage
+    if (guests && guests.length > 0) {
+      const photoUrls = guests
+        .map((guest) => guest.photo_url)
+        .filter((url): url is string => url !== null)
+
+      if (photoUrls.length > 0) {
+        // Extract file paths from full URLs
+        // URL format: https://{project}.supabase.co/storage/v1/object/public/guestpass/{path}
+        const filePaths = photoUrls.map((url) => {
+          const match = url.match(/\/guestpass\/(.+)$/)
+          return match ? match[1] : null
+        }).filter((path): path is string => path !== null)
+
+        if (filePaths.length > 0) {
+          const { error: storageError } = await client.storage
+            .from("guestpass")
+            .remove(filePaths)
+
+          if (storageError) {
+            console.error("Failed to delete photos from storage:", storageError)
+            // Continue with event deletion even if storage cleanup fails
+          } else {
+            console.log(`✅ Deleted ${filePaths.length} photo(s) from storage for event ${id}`)
+          }
+        }
+      }
+    }
+
+    // Step 3: Delete the event (CASCADE will delete guest records)
     const { error } = await client.from("events").delete().eq("id", id)
 
     if (error) {

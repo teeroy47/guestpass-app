@@ -7,6 +7,8 @@ export interface SupabaseCreateGuestInput {
   name: string
   email?: string
   phone?: string
+  seatingArea?: 'Reserved' | 'Free Seating'
+  cuisineChoice?: 'Traditional' | 'Western'
   checkedInBy?: string
   usherName?: string
   usherEmail?: string
@@ -39,6 +41,8 @@ export class SupabaseGuestService {
       name: row.name,
       email: row.email ?? undefined,
       phone: row.phone ?? undefined,
+      seatingArea: row.seating_area,
+      cuisineChoice: row.cuisine_choice,
       uniqueCode: row.unique_code,
       checkedIn: row.checked_in,
       checkedInAt: row.checked_in_at ?? undefined,
@@ -65,6 +69,8 @@ export class SupabaseGuestService {
           name,
           email,
           phone,
+          seating_area,
+          cuisine_choice,
           unique_code,
           checked_in,
           checked_in_at,
@@ -99,6 +105,8 @@ export class SupabaseGuestService {
         name: data.name,
         email: data.email ?? null,
         phone: data.phone ?? null,
+        seating_area: data.seatingArea ?? 'Free Seating',
+        cuisine_choice: data.cuisineChoice ?? 'Traditional',
         checked_in_by: data.checkedInBy ?? null,
       })
       .select(
@@ -108,6 +116,8 @@ export class SupabaseGuestService {
           name,
           email,
           phone,
+          seating_area,
+          cuisine_choice,
           unique_code,
           checked_in,
           checked_in_at,
@@ -147,13 +157,15 @@ export class SupabaseGuestService {
       name: guest.name,
       email: guest.email ?? null,
       phone: guest.phone ?? null,
+      seating_area: guest.seatingArea ?? 'Free Seating',
+      cuisine_choice: guest.cuisineChoice ?? 'Traditional',
       checked_in_by: guest.checkedInBy ?? null,
     }))
 
     const { data, error } = await client
       .from("guests")
       .insert(payload)
-      .select("id, unique_code, name, email, phone")
+      .select("id, unique_code, name, email, phone, seating_area, cuisine_choice")
 
     if (error) {
       throw error
@@ -165,6 +177,8 @@ export class SupabaseGuestService {
       name: row.name as string,
       email: (row as { email: string | null }).email ?? undefined,
       phone: (row as { phone: string | null }).phone ?? undefined,
+      seatingArea: (row as { seating_area: 'Reserved' | 'Free Seating' }).seating_area,
+      cuisineChoice: (row as { cuisine_choice: 'Traditional' | 'Western' }).cuisine_choice,
     }))
   }
 
@@ -180,6 +194,12 @@ export class SupabaseGuestService {
     }
     if (updates.phone !== undefined) {
       payload.phone = updates.phone ?? null
+    }
+    if (updates.seatingArea !== undefined) {
+      payload.seating_area = updates.seatingArea
+    }
+    if (updates.cuisineChoice !== undefined) {
+      payload.cuisine_choice = updates.cuisineChoice
     }
     if (updates.checkedInBy !== undefined) {
       payload.checked_in_by = updates.checkedInBy ?? null
@@ -211,6 +231,8 @@ export class SupabaseGuestService {
           name,
           email,
           phone,
+          seating_area,
+          cuisine_choice,
           unique_code,
           checked_in,
           checked_in_at,
@@ -342,6 +364,8 @@ export class SupabaseGuestService {
           name,
           email,
           phone,
+          seating_area,
+          cuisine_choice,
           unique_code,
           checked_in,
           checked_in_at,
@@ -373,6 +397,8 @@ export class SupabaseGuestService {
             name,
             email,
             phone,
+            seating_area,
+            cuisine_choice,
             unique_code,
             checked_in,
             checked_in_at,

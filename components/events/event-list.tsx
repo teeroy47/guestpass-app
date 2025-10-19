@@ -6,13 +6,15 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Badge } from "@/components/ui/badge"
 import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { Checkbox } from "@/components/ui/checkbox"
 import { useEvents } from "@/lib/events-context"
 import { useAuth } from "@/lib/auth-context"
 import { CreateEventDialog } from "./create-event-dialog"
 import { EventDetailsDialog } from "./event-details-dialog"
-import { Camera, Calendar, MapPin, Users, Plus, Search, MoreHorizontal, Mail } from "lucide-react"
+import { Camera, Calendar, MapPin, Users, Plus, Search, MoreHorizontal, Mail, Trash2, X } from "lucide-react"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { QRScanner } from "@/components/scanner/qr-scanner"
+import { useToast } from "@/components/ui/use-toast"
 
 export function getStatusColor(status: string) {
   switch (status) {
@@ -43,23 +45,50 @@ const EventCard = ({
   onEdit,
   onDelete,
   onOpenScanner,
+  isSelected,
+  onToggleSelect,
+  selectionMode,
 }: {
   event: any
   onEdit: (event: any) => void
   onDelete: (id: string) => void
   onOpenScanner: (eventId: string) => void
+  isSelected: boolean
+  onToggleSelect: (id: string) => void
+  selectionMode: boolean
 }) => {
+  const handleCardClick = () => {
+    if (selectionMode && event.isAdmin) {
+      onToggleSelect(event.id)
+    } else if (!selectionMode) {
+      onEdit(event)
+    }
+  }
+
   return (
-    <Card className="bg-card border-border hover:border-primary/50 transition-colors cursor-pointer" onClick={() => onEdit(event)}>
+    <Card 
+      className={`bg-card border-border hover:border-primary/50 transition-colors cursor-pointer ${isSelected ? 'ring-2 ring-primary' : ''}`} 
+      onClick={handleCardClick}
+    >
       <CardHeader className="pb-3">
         <div className="flex items-start justify-between">
-          <div className="flex-1">
-            <CardTitle className="text-lg line-clamp-1">{event.title}</CardTitle>
-            <Badge variant={getStatusColor(event.status)} className="mt-2">
-              {event.status}
-            </Badge>
+          <div className="flex items-start gap-3 flex-1">
+            {selectionMode && event.isAdmin && (
+              <Checkbox
+                checked={isSelected}
+                onCheckedChange={() => onToggleSelect(event.id)}
+                onClick={(e) => e.stopPropagation()}
+                className="mt-1"
+              />
+            )}
+            <div className="flex-1">
+              <CardTitle className="text-lg line-clamp-1">{event.title}</CardTitle>
+              <Badge variant={getStatusColor(event.status)} className="mt-2">
+                {event.status}
+              </Badge>
+            </div>
           </div>
-          {event.isAdmin && (
+          {event.isAdmin && !selectionMode && (
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button variant="ghost" size="sm" onClick={(e) => e.stopPropagation()}>
@@ -152,8 +181,9 @@ const EventCard = ({
 }
 
 export function EventList() {
-  const { events, loading, deleteEvent } = useEvents()
+  const { events, loading, deleteEvent, updateEvent } = useEvents()
   const { user } = useAuth()
+  const { toast } = useToast()
   const role = (user?.app_metadata?.role ?? "usher") as "admin" | "usher"
   const [searchTerm, setSearchTerm] = useState("")
   const [statusFilter, setStatusFilter] = useState<string>("all")
@@ -163,6 +193,10 @@ export function EventList() {
   const [showDetailsDialog, setShowDetailsDialog] = useState(false)
   const [showInviteBuilder, setShowInviteBuilder] = useState(false)
   const [scannerEventId, setScannerEventId] = useState<string | null>(null)
+  const [selectionMode, setSelectionMode] = useState(false)
+  const [selectedEventIds, setSelectedEventIds] = useState<string[]>([])
+  const [isDeleting, setIsDeleting] = useState(false)
+  const [isUpdatingStatus, setIsUpdatingStatus] = useState(false)
 
   const isAdmin = role === "admin"
 
@@ -177,6 +211,79 @@ export function EventList() {
   const handleDeleteEvent = async (eventId: string) => {
     if (confirm("Are you sure you want to delete this event? This action cannot be undone.")) {
       await deleteEvent(eventId)
+    }
+  }
+
+  const handleBulkDelete = async () => {
+    if (selectedEventIds.length === 0) return
+    
+    const confirmMessage = `Are you sure you want to delete ${selectedEventIds.length} event(s)? This action cannot be undone.`
+    if (!confirm(confirmMessage)) return
+
+    setIsDeleting(true)
+    try {
+      // Delete all selected events
+      await Promise.all(selectedEventIds.map((id) => deleteEvent(id)))
+      
+      toast({
+        title: "Events deleted",
+        description: `Successfully deleted ${selectedEventIds.length} event(s)`,
+      })
+      
+      // Reset selection
+      setSelectedEventIds([])
+      setSelectionMode(false)
+    } catch (error) {
+      console.error("Failed to delete events:", error)
+      toast({
+        title: "Delete failed",
+        description: "Failed to delete some events. Please try again.",
+        variant: "destructive",
+      })
+    } finally {
+      setIsDeleting(false)
+    }
+  }
+
+  const handleBulkStatusChange = async (newStatus: "draft" | "active" | "completed") => {
+    if (selectedEventIds.length === 0) return
+
+    setIsUpdatingStatus(true)
+    try {
+      // Update status for all selected events
+      await Promise.all(selectedEventIds.map((id) => updateEvent(id, { status: newStatus })))
+      
+      toast({
+        title: "Status updated",
+        description: `Successfully updated ${selectedEventIds.length} event(s) to ${newStatus}`,
+      })
+      
+      // Reset selection
+      setSelectedEventIds([])
+      setSelectionMode(false)
+    } catch (error) {
+      console.error("Failed to update event status:", error)
+      toast({
+        title: "Update failed",
+        description: "Failed to update some events. Please try again.",
+        variant: "destructive",
+      })
+    } finally {
+      setIsUpdatingStatus(false)
+    }
+  }
+
+  const toggleSelectEvent = (eventId: string) => {
+    setSelectedEventIds((prev) =>
+      prev.includes(eventId) ? prev.filter((id) => id !== eventId) : [...prev, eventId]
+    )
+  }
+
+  const toggleSelectAll = () => {
+    if (selectedEventIds.length === filteredEvents.length) {
+      setSelectedEventIds([])
+    } else {
+      setSelectedEventIds(filteredEvents.map((e: any) => e.id))
     }
   }
 
@@ -225,29 +332,93 @@ export function EventList() {
         </div>
         {isAdmin && (
           <div className="flex flex-col sm:flex-row gap-2">
-            <Button 
-              variant="outline" 
-              onClick={handleOpenGuestManager}
-              className="w-full sm:w-auto bg-card hover:bg-accent"
-            >
-              <Users className="mr-2 h-4 w-4" />
-              <span>Manage Guests</span>
-            </Button>
-            <Button 
-              onClick={handleOpenCreateDialog}
-              className="w-full sm:w-auto"
-            >
-              <Plus className="mr-2 h-4 w-4" />
-              <span>Create Event</span>
-            </Button>
-            <Button 
-              variant="outline" 
-              onClick={() => setShowInviteBuilder(true)}
-              className="w-full sm:w-auto bg-card hover:bg-accent"
-            >
-              <Mail className="mr-2 h-4 w-4" />
-              <span>Create Invite</span>
-            </Button>
+            {!selectionMode ? (
+              <>
+                <Button 
+                  variant="outline" 
+                  onClick={handleOpenGuestManager}
+                  className="w-full sm:w-auto bg-card hover:bg-accent"
+                >
+                  <Users className="mr-2 h-4 w-4" />
+                  <span>Manage Guests</span>
+                </Button>
+                <Button 
+                  onClick={handleOpenCreateDialog}
+                  className="w-full sm:w-auto"
+                >
+                  <Plus className="mr-2 h-4 w-4" />
+                  <span>Create Event</span>
+                </Button>
+                <Button 
+                  variant="outline" 
+                  onClick={() => setShowInviteBuilder(true)}
+                  className="w-full sm:w-auto bg-card hover:bg-accent"
+                >
+                  <Mail className="mr-2 h-4 w-4" />
+                  <span>Create Invite</span>
+                </Button>
+                <Button 
+                  variant="outline" 
+                  onClick={() => setSelectionMode(true)}
+                  className="w-full sm:w-auto bg-card hover:bg-accent"
+                >
+                  <Checkbox className="mr-2 h-4 w-4" />
+                  <span>Bulk Actions</span>
+                </Button>
+              </>
+            ) : (
+              <>
+                <Button 
+                  variant="outline" 
+                  onClick={() => {
+                    setSelectionMode(false)
+                    setSelectedEventIds([])
+                  }}
+                  className="w-full sm:w-auto"
+                >
+                  <X className="mr-2 h-4 w-4" />
+                  <span>Cancel</span>
+                </Button>
+                <Button 
+                  variant="outline" 
+                  onClick={toggleSelectAll}
+                  className="w-full sm:w-auto"
+                >
+                  <span>{selectedEventIds.length === filteredEvents.length ? "Deselect All" : "Select All"}</span>
+                </Button>
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button 
+                      variant="outline" 
+                      disabled={selectedEventIds.length === 0 || isUpdatingStatus}
+                      className="w-full sm:w-auto"
+                    >
+                      <span>{isUpdatingStatus ? "Updating..." : `Change Status (${selectedEventIds.length})`}</span>
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end">
+                    <DropdownMenuItem onClick={() => handleBulkStatusChange("draft")}>
+                      Set to Draft
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => handleBulkStatusChange("active")}>
+                      Set to Active
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onClick={() => handleBulkStatusChange("completed")}>
+                      Set to Completed
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+                <Button 
+                  variant="destructive" 
+                  onClick={handleBulkDelete}
+                  disabled={selectedEventIds.length === 0 || isDeleting}
+                  className="w-full sm:w-auto"
+                >
+                  <Trash2 className="mr-2 h-4 w-4" />
+                  <span>{isDeleting ? "Deleting..." : `Delete (${selectedEventIds.length})`}</span>
+                </Button>
+              </>
+            )}
           </div>
         )}
       </div>
@@ -304,6 +475,9 @@ export function EventList() {
               onEdit={() => setEditingEvent(event)}
               onDelete={handleDeleteEvent}
               onOpenScanner={onOpenScanner}
+              isSelected={selectedEventIds.includes(event.id)}
+              onToggleSelect={toggleSelectEvent}
+              selectionMode={selectionMode}
             />
           ))}
         </div>

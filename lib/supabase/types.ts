@@ -16,6 +16,8 @@ export interface SupabaseGuestRow {
   name: string
   email: string | null
   phone: string | null
+  seating_area: 'Reserved' | 'Free Seating'
+  cuisine_choice: 'Traditional' | 'Western'
   unique_code: string
   checked_in: boolean
   checked_in_at: string | null

@@ -3,7 +3,7 @@
 import { useState, useRef, useCallback, useEffect } from "react"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
-import { Camera, X, RotateCcw, Check, Loader2 } from "lucide-react"
+import { Camera, X, RotateCcw, Check, Loader2, SwitchCamera } from "lucide-react"
 import { compressImage, captureFromVideo } from "@/lib/image-utils"
 
 interface PhotoCaptureDialogProps {
@@ -19,13 +19,14 @@ export function PhotoCaptureDialog({ open, onClose, onCapture, onSkip, guestName
   const [capturedPhoto, setCapturedPhoto] = useState<string | null>(null)
   const [isProcessing, setIsProcessing] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [facingMode, setFacingMode] = useState<"user" | "environment">("environment") // Default to back camera
   const videoRef = useRef<HTMLVideoElement>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
 
   const startCamera = useCallback(async () => {
     try {
       setError(null)
-      console.log("Requesting camera access...")
+      console.log("Requesting camera access with facingMode:", facingMode)
       
       // Add timeout to prevent infinite loading
       const timeoutPromise = new Promise((_, reject) => 
@@ -34,7 +35,7 @@ export function PhotoCaptureDialog({ open, onClose, onCapture, onSkip, guestName
       
       const cameraPromise = navigator.mediaDevices.getUserMedia({
         video: {
-          facingMode: "user", // Front camera for selfie
+          facingMode: facingMode, // Use current facing mode (default: back camera)
           width: { ideal: 1280 },
           height: { ideal: 720 },
         },
@@ -63,7 +64,7 @@ export function PhotoCaptureDialog({ open, onClose, onCapture, onSkip, guestName
         setError("Unable to access camera. Please check permissions and try again.")
       }
     }
-  }, [])
+  }, [facingMode])
 
   const stopCamera = useCallback(() => {
     if (stream) {
@@ -82,13 +83,13 @@ export function PhotoCaptureDialog({ open, onClose, onCapture, onSkip, guestName
         format: "jpeg",
       })
 
-      // Compress the photo
+      // Compress the photo (increased resolution for better quality)
       const compressedBlob = await compressImage(
         new File([photoBlob], "photo.jpg", { type: "image/jpeg" }),
         {
-          maxWidth: 800,
-          maxHeight: 800,
-          quality: 0.85,
+          maxWidth: 1200,
+          maxHeight: 1200,
+          quality: 0.9,
           format: "jpeg",
         }
       )
@@ -114,6 +115,13 @@ export function PhotoCaptureDialog({ open, onClose, onCapture, onSkip, guestName
     }
     startCamera()
   }, [capturedPhoto, startCamera])
+
+  const switchCamera = useCallback(() => {
+    // Stop current stream
+    stopCamera()
+    // Toggle facing mode
+    setFacingMode(prev => prev === "user" ? "environment" : "user")
+  }, [stopCamera])
 
   const confirmPhoto = useCallback(async () => {
     if (!capturedPhoto) return
@@ -179,7 +187,7 @@ export function PhotoCaptureDialog({ open, onClose, onCapture, onSkip, guestName
     onClose()
   }, [stopCamera, capturedPhoto, onClose])
 
-  // Start camera when dialog opens
+  // Start camera when dialog opens or facing mode changes
   useEffect(() => {
     if (open && !stream && !capturedPhoto) {
       console.log("Dialog opened, starting camera...")
@@ -193,6 +201,13 @@ export function PhotoCaptureDialog({ open, onClose, onCapture, onSkip, guestName
       }
     }
   }, [open, stream, capturedPhoto, startCamera, stopCamera])
+
+  // Restart camera when facing mode changes
+  useEffect(() => {
+    if (open && !capturedPhoto) {
+      startCamera()
+    }
+  }, [facingMode])
 
   const handleOpenChange = useCallback(
     (isOpen: boolean) => {
@@ -257,6 +272,19 @@ export function PhotoCaptureDialog({ open, onClose, onCapture, onSkip, guestName
                   <div className="absolute -bottom-1 left-1/2 -translate-x-1/2 w-16 h-16 border-b-4 border-r-4 border-primary rounded-br-full"></div>
                 </div>
               </div>
+            )}
+
+            {/* Camera Switch Button */}
+            {stream && !capturedPhoto && !error && (
+              <Button
+                onClick={switchCamera}
+                variant="secondary"
+                size="icon"
+                className="absolute top-4 right-4 rounded-full bg-black/50 hover:bg-black/70 text-white border-white/20"
+                disabled={isProcessing}
+              >
+                <SwitchCamera className="h-5 w-5" />
+              </Button>
             )}
           </div>
 

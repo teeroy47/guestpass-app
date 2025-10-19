@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Supabase Storage Test</title>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+</head>
+<body>
+    <h1>Supabase Storage Test</h1>
+    <button onclick="testStorage()">Test Storage Upload</button>
+    <button onclick="listFiles()">List Files</button>
+    <button onclick="checkBucket()">Check Bucket Config</button>
+    <div id="output" style="margin-top: 20px; white-space: pre-wrap; font-family: monospace;"></div>
+
+    <script>
+        const SUPABASE_URL = 'https://yiujxmrwwsgfhqcllafe.supabase.co'
+        const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InlpdWp4bXJ3d3NnZmhxY2xsYWZlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTkzOTU0NDEsImV4cCI6MjA3NDk3MTQ0MX0.1Dx8HF7wSzhvREKudHJ7yNbfbKoCxvnUP-Swdg6j4RA'
+
+        const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY)
+        const output = document.getElementById('output')
+
+        function log(message) {
+            output.textContent += message + '\n'
+            console.log(message)
+        }
+
+        async function testStorage() {
+            output.textContent = ''
+            log('Testing storage upload...\n')
+
+            try {
+                // Create a test image blob
+                const canvas = document.createElement('canvas')
+                canvas.width = 100
+                canvas.height = 100
+                const ctx = canvas.getContext('2d')
+                ctx.fillStyle = 'red'
+                ctx.fillRect(0, 0, 100, 100)
+                
+                const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/jpeg'))
+                log(`Created test blob: ${blob.size} bytes`)
+
+                // Upload to storage
+                const filename = `test-photos/test_${Date.now()}.jpg`
+                log(`Uploading to: ${filename}`)
+
+                const { data, error } = await supabase.storage
+                    .from('guestpass')
+                    .upload(filename, blob, {
+                        contentType: 'image/jpeg',
+                        cacheControl: '3600',
+                        upsert: false,
+                    })
+
+                if (error) {
+                    log(`❌ Upload failed: ${error.message}`)
+                    log(`Error details: ${JSON.stringify(error, null, 2)}`)
+                    return
+                }
+
+                log(`✅ Upload successful!`)
+                log(`Upload data: ${JSON.stringify(data, null, 2)}`)
+
+                // Get public URL
+                const { data: urlData } = supabase.storage
+                    .from('guestpass')
+                    .getPublicUrl(filename)
+
+                log(`\nPublic URL: ${urlData.publicUrl}`)
+
+                // Try to fetch the URL to see if it's accessible
+                log('\nTesting if URL is accessible...')
+                const response = await fetch(urlData.publicUrl)
+                log(`Response status: ${response.status} ${response.statusText}`)
+                
+                if (response.ok) {
+                    log('✅ Image is publicly accessible!')
+                } else {
+                    log('❌ Image is NOT accessible (404 or permission error)')
+                    log('This means the bucket is not public or policies are wrong')
+                }
+
+            } catch (err) {
+                log(`❌ Error: ${err.message}`)
+                console.error(err)
+            }
+        }
+
+        async function listFiles() {
+            output.textContent = ''
+            log('Listing files in guest-photos...\n')
+
+            try {
+                const { data, error } = await supabase.storage
+                    .from('guestpass')
+                    .list('guest-photos', {
+                        limit: 100,
+                        offset: 0,
+                    })
+
+                if (error) {
+                    log(`❌ Error: ${error.message}`)
+                    return
+                }
+
+                log(`Found ${data.length} files:\n`)
+                data.forEach(file => {
+                    log(`- ${file.name} (${file.metadata?.size || 'unknown'} bytes)`)
+                })
+
+            } catch (err) {
+                log(`❌ Error: ${err.message}`)
+            }
+        }
+
+        async function checkBucket() {
+            output.textContent = ''
+            log('Checking bucket configuration...\n')
+
+            try {
+                // Try to get bucket info
+                const { data, error } = await supabase.storage.getBucket('guestpass')
+
+                if (error) {
+                    log(`❌ Error getting bucket: ${error.message}`)
+                    return
+                }
+
+                log('Bucket info:')
+                log(JSON.stringify(data, null, 2))
+
+                if (data.public) {
+                    log('\n✅ Bucket is PUBLIC')
+                } else {
+                    log('\n❌ Bucket is PRIVATE - this is the problem!')
+                    log('You need to make the bucket public or use signed URLs')
+                }
+
+            } catch (err) {
+                log(`❌ Error: ${err.message}`)
+            }
+        }
+    </script>
+</body>
+</html>

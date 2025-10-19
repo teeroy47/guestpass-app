@@ -3,10 +3,11 @@
 import { useState, useEffect, useRef } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { useEvents } from "@/lib/events-context"
 import { useGuests } from "@/lib/guests-context"
 import { createBrowserSupabaseClient } from "@/lib/supabase/browser"
-import { CheckCircle, Users, Activity, Bell } from "lucide-react"
+import { CheckCircle, Users, Activity, Bell, TrendingUp, Clock, UserCheck } from "lucide-react"
 import { useToast } from "@/components/ui/use-toast"
 
 interface CheckInNotification {
@@ -112,16 +113,27 @@ export function ActiveEventsRealtime() {
           }
         }
       )
-      .subscribe((status) => {
+      .subscribe((status, err) => {
         if (status === "SUBSCRIBED") {
           console.log("✅ Real-time analytics connected")
         } else if (status === "CHANNEL_ERROR") {
-          console.error("❌ Real-time analytics connection error")
+          console.error("❌ Real-time analytics connection error:", err)
+          // Attempt to reconnect after 3 seconds
+          setTimeout(() => {
+            console.log("🔄 Attempting to reconnect real-time analytics...")
+            channel.subscribe()
+          }, 3000)
+        } else if (status === "TIMED_OUT") {
+          console.warn("⏱️ Real-time analytics connection timed out, reconnecting...")
+          channel.subscribe()
+        } else if (status === "CLOSED") {
+          console.warn("🔌 Real-time analytics connection closed")
         }
       })
 
     // Cleanup subscription on unmount
     return () => {
+      console.log("🧹 Cleaning up real-time analytics subscription")
       supabaseClient.current.removeChannel(channel)
     }
   }, [activeEvents, toast])
@@ -208,60 +220,132 @@ export function ActiveEventsRealtime() {
         )}
 
         {/* Active Events List */}
-        {activeEventStats.map(({ event, checkedInCount, totalGuests, attendanceRate }) => (
-          <div key={event.id} className="border rounded-lg p-4 space-y-3 hover:bg-muted/50 transition-colors">
-            <div className="flex items-start justify-between">
-              <div className="flex-1 min-w-0">
-                <h3 className="font-semibold text-base truncate">{event.title}</h3>
-                <p className="text-sm text-muted-foreground">
-                  {new Date(event.startsAt).toLocaleDateString("en-US", {
-                    year: "numeric",
-                    month: "short",
-                    day: "numeric",
-                    hour: "2-digit",
-                    minute: "2-digit",
-                    hour12: false,
-                  })}
-                </p>
-              </div>
-              <Badge variant="default" className="shrink-0">
-                Active
-              </Badge>
-            </div>
+        {activeEventStats.map(({ event, checkedInCount, totalGuests, attendanceRate }) => {
+          const eventGuests = getGuestsByEvent(event.id)
+          const recentCheckIns = eventGuests
+            .filter((g) => g.checkedIn && g.checkedInAt)
+            .sort((a, b) => new Date(b.checkedInAt!).getTime() - new Date(a.checkedInAt!).getTime())
+            .slice(0, 5)
+          
+          const uniqueUshers = new Set(eventGuests.filter((g) => g.checkedIn && g.usherName).map((g) => g.usherName))
+          
+          return (
+            <Popover key={event.id}>
+              <PopoverTrigger asChild>
+                <div className="border rounded-lg p-4 space-y-3 hover:bg-muted/50 hover:border-primary/50 transition-all cursor-pointer">
+                  <div className="flex items-start justify-between">
+                    <div className="flex-1 min-w-0">
+                      <h3 className="font-semibold text-base truncate">{event.title}</h3>
+                      <p className="text-sm text-muted-foreground">
+                        {new Date(event.startsAt).toLocaleDateString("en-US", {
+                          year: "numeric",
+                          month: "short",
+                          day: "numeric",
+                          hour: "2-digit",
+                          minute: "2-digit",
+                          hour12: false,
+                        })}
+                      </p>
+                    </div>
+                    <Badge variant="default" className="shrink-0 animate-pulse">
+                      Active
+                    </Badge>
+                  </div>
 
-            {/* Stats Grid */}
-            <div className="grid grid-cols-3 gap-3">
-              <div className="text-center p-2 bg-muted rounded">
-                <div className="text-2xl font-bold text-primary">{checkedInCount}</div>
-                <div className="text-xs text-muted-foreground">Checked In</div>
-              </div>
-              <div className="text-center p-2 bg-muted rounded">
-                <div className="text-2xl font-bold">{totalGuests - checkedInCount}</div>
-                <div className="text-xs text-muted-foreground">Pending</div>
-              </div>
-              <div className="text-center p-2 bg-muted rounded">
-                <div className="text-2xl font-bold text-green-600">{attendanceRate.toFixed(0)}%</div>
-                <div className="text-xs text-muted-foreground">Rate</div>
-              </div>
-            </div>
+                  {/* Stats Grid */}
+                  <div className="grid grid-cols-3 gap-3">
+                    <div className="text-center p-2 bg-muted rounded">
+                      <div className="text-2xl font-bold text-primary">{checkedInCount}</div>
+                      <div className="text-xs text-muted-foreground">Checked In</div>
+                    </div>
+                    <div className="text-center p-2 bg-muted rounded">
+                      <div className="text-2xl font-bold">{totalGuests - checkedInCount}</div>
+                      <div className="text-xs text-muted-foreground">Pending</div>
+                    </div>
+                    <div className="text-center p-2 bg-muted rounded">
+                      <div className="text-2xl font-bold text-green-600">{attendanceRate.toFixed(0)}%</div>
+                      <div className="text-xs text-muted-foreground">Rate</div>
+                    </div>
+                  </div>
 
-            {/* Progress Bar */}
-            <div className="space-y-1">
-              <div className="flex justify-between text-xs text-muted-foreground">
-                <span>Progress</span>
-                <span>
-                  {checkedInCount} / {totalGuests}
-                </span>
-              </div>
-              <div className="w-full bg-secondary rounded-full h-2 overflow-hidden">
-                <div
-                  className="bg-primary h-2 rounded-full transition-all duration-500 ease-out"
-                  style={{ width: `${attendanceRate}%` }}
-                />
-              </div>
-            </div>
-          </div>
-        ))}
+                  {/* Progress Bar */}
+                  <div className="space-y-1">
+                    <div className="flex justify-between text-xs text-muted-foreground">
+                      <span>Progress</span>
+                      <span>
+                        {checkedInCount} / {totalGuests}
+                      </span>
+                    </div>
+                    <div className="w-full bg-secondary rounded-full h-2 overflow-hidden">
+                      <div
+                        className="bg-primary h-2 rounded-full transition-all duration-500 ease-out"
+                        style={{ width: `${attendanceRate}%` }}
+                      />
+                    </div>
+                  </div>
+                </div>
+              </PopoverTrigger>
+              <PopoverContent className="w-80" align="start">
+                <div className="space-y-4">
+                  <div>
+                    <h4 className="font-semibold text-sm mb-2 flex items-center gap-2">
+                      <TrendingUp className="h-4 w-4 text-primary" />
+                      Live Statistics
+                    </h4>
+                    <div className="grid grid-cols-2 gap-2 text-sm">
+                      <div className="flex items-center gap-2">
+                        <UserCheck className="h-3 w-3 text-muted-foreground" />
+                        <span className="text-muted-foreground">Active Ushers:</span>
+                      </div>
+                      <span className="font-medium">{uniqueUshers.size}</span>
+                      
+                      <div className="flex items-center gap-2">
+                        <Clock className="h-3 w-3 text-muted-foreground" />
+                        <span className="text-muted-foreground">Avg. Rate:</span>
+                      </div>
+                      <span className="font-medium">{attendanceRate.toFixed(1)}%</span>
+                    </div>
+                  </div>
+
+                  {recentCheckIns.length > 0 && (
+                    <div>
+                      <h4 className="font-semibold text-sm mb-2 flex items-center gap-2">
+                        <Clock className="h-4 w-4 text-primary" />
+                        Recent Check-ins
+                      </h4>
+                      <div className="space-y-2">
+                        {recentCheckIns.map((guest, idx) => (
+                          <div key={guest.id} className="flex items-center justify-between text-xs">
+                            <div className="flex items-center gap-2 flex-1 min-w-0">
+                              <CheckCircle className="h-3 w-3 text-green-600 flex-shrink-0" />
+                              <span className="truncate font-medium">{guest.name}</span>
+                            </div>
+                            <span className="text-muted-foreground flex-shrink-0 ml-2">
+                              {Math.floor((Date.now() - new Date(guest.checkedInAt!).getTime()) / 60000)}m ago
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {uniqueUshers.size > 0 && (
+                    <div>
+                      <h4 className="font-semibold text-sm mb-2">Active Ushers</h4>
+                      <div className="flex flex-wrap gap-1">
+                        {Array.from(uniqueUshers).map((usher) => (
+                          <Badge key={usher} variant="secondary" className="text-xs">
+                            {usher}
+                          </Badge>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </PopoverContent>
+            </Popover>
+          )
+        })}
 
         {/* Summary Stats */}
         <div className="pt-4 border-t">

@@ -15,6 +15,8 @@ interface ParsedGuest {
   name: string
   email?: string
   phone?: string
+  seatingArea?: 'Reserved' | 'Free Seating'
+  cuisineChoice?: 'Traditional' | 'Western'
   row: number
 }
 
@@ -79,6 +81,8 @@ export function GuestUploadDialog({ eventId, eventTitle, open, onOpenChange }: G
         const nameIndex = headers.findIndex((h) => h.includes("name"))
         const emailIndex = headers.findIndex((h) => h.includes("email"))
         const phoneIndex = headers.findIndex((h) => h.includes("phone"))
+        const seatingIndex = headers.findIndex((h) => h.includes("seating"))
+        const cuisineIndex = headers.findIndex((h) => h.includes("cuisine"))
 
         if (nameIndex === -1) {
           setError("CSV file must contain a 'name' column")
@@ -104,11 +108,35 @@ export function GuestUploadDialog({ eventId, eventTitle, open, onOpenChange }: G
 
           const email = emailIndex !== -1 ? values[emailIndex]?.trim() : undefined
           const phone = phoneIndex !== -1 ? values[phoneIndex]?.trim() : undefined
+          
+          // Parse seating area with validation
+          let seatingArea: 'Reserved' | 'Free Seating' = 'Free Seating'
+          if (seatingIndex !== -1) {
+            const seatingValue = values[seatingIndex]?.trim()
+            if (seatingValue === 'Reserved' || seatingValue === 'Free Seating') {
+              seatingArea = seatingValue
+            } else if (seatingValue) {
+              errors.push(`Row ${i + 1}: Invalid seating area '${seatingValue}'. Must be 'Reserved' or 'Free Seating'`)
+            }
+          }
+          
+          // Parse cuisine choice with validation
+          let cuisineChoice: 'Traditional' | 'Western' = 'Traditional'
+          if (cuisineIndex !== -1) {
+            const cuisineValue = values[cuisineIndex]?.trim()
+            if (cuisineValue === 'Traditional' || cuisineValue === 'Western') {
+              cuisineChoice = cuisineValue
+            } else if (cuisineValue) {
+              errors.push(`Row ${i + 1}: Invalid cuisine choice '${cuisineValue}'. Must be 'Traditional' or 'Western'`)
+            }
+          }
 
           guests.push({
             name,
             email: email || undefined,
             phone: phone || undefined,
+            seatingArea,
+            cuisineChoice,
             row: i + 1,
           })
         }
@@ -142,6 +170,8 @@ export function GuestUploadDialog({ eventId, eventTitle, open, onOpenChange }: G
         name: guest.name,
         email: guest.email,
         phone: guest.phone,
+        seatingArea: guest.seatingArea,
+        cuisineChoice: guest.cuisineChoice,
       }))
 
       // Simulate progress for better UX
@@ -175,7 +205,7 @@ export function GuestUploadDialog({ eventId, eventTitle, open, onOpenChange }: G
 
   const downloadTemplate = () => {
     const csvContent =
-      "name,email,phone\nJohn Smith,john@example.com,0785211893\nSarah Johnson,sarah@example.com,0712345678\nMichael Chen,michael@example.com,0798765432"
+      "name,email,phone,seating,cuisine\nJohn Smith,john@example.com,+265991234567,Reserved,Traditional\nSarah Johnson,sarah@example.com,+265992345678,Free Seating,Western\nMichael Chen,michael@example.com,+265993456789,Free Seating,Traditional"
     const blob = new Blob([csvContent], { type: "text/csv" })
     const url = window.URL.createObjectURL(blob)
     const a = document.createElement("a")
@@ -261,10 +291,14 @@ export function GuestUploadDialog({ eventId, eventTitle, open, onOpenChange }: G
                 <div className="space-y-2">
                   {parsedGuests.slice(0, 10).map((guest, index) => (
                     <div key={index} className="flex justify-between items-center p-2 bg-muted rounded">
-                      <div>
+                      <div className="flex-1">
                         <p className="font-medium text-sm">{guest.name}</p>
                         {guest.email && <p className="text-xs text-muted-foreground">{guest.email}</p>}
-                        {guest.phone && <p className="text-xs text-muted-foreground">📱 {guest.phone}</p>}
+                        <div className="flex gap-3 mt-1">
+                          {guest.phone && <p className="text-xs text-muted-foreground">📱 {guest.phone}</p>}
+                          {guest.seatingArea && <p className="text-xs text-muted-foreground">🪑 {guest.seatingArea}</p>}
+                          {guest.cuisineChoice && <p className="text-xs text-muted-foreground">🍽️ {guest.cuisineChoice}</p>}
+                        </div>
                       </div>
                       <span className="text-xs text-muted-foreground">Row {guest.row}</span>
                     </div>
@@ -285,7 +319,9 @@ export function GuestUploadDialog({ eventId, eventTitle, open, onOpenChange }: G
             <ul className="text-xs text-muted-foreground space-y-1">
               <li>• <strong>name</strong> column is required</li>
               <li>• <strong>email</strong> column is optional</li>
-              <li>• <strong>phone</strong> column is optional (format: 0785211893)</li>
+              <li>• <strong>phone</strong> column is optional (format: +265991234567)</li>
+              <li>• <strong>seating</strong> column is optional (Reserved or Free Seating)</li>
+              <li>• <strong>cuisine</strong> column is optional (Traditional or Western)</li>
               <li>• First row must contain column headers</li>
               <li>• CSV format with comma separation</li>
               <li>• Maximum 1000 guests per upload</li>
@@ -293,9 +329,9 @@ export function GuestUploadDialog({ eventId, eventTitle, open, onOpenChange }: G
             <div className="mt-3">
               <p className="text-xs font-medium mb-1">Example CSV:</p>
               <div className="bg-background p-2 rounded text-xs font-mono">
-                name,email,phone<br />
-                John Smith,john@example.com,0785211893<br />
-                Sarah Johnson,sarah@example.com,0712345678
+                name,email,phone,seating,cuisine<br />
+                John Smith,john@example.com,+265991234567,Reserved,Traditional<br />
+                Sarah Johnson,sarah@example.com,+265992345678,Free Seating,Western
               </div>
             </div>
           </div>
