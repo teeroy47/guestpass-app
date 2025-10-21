@@ -8,19 +8,26 @@ import { Badge } from "@/components/ui/badge"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { useToast } from "@/components/ui/use-toast"
 import { useEvents } from "@/lib/events-context"
 import { useGuests } from "@/lib/guests-context"
+import { useAuth } from "@/lib/auth-context"
 import { generateQRCodeData, generateQRCodeSVG, downloadQRCodeAsPNGFromSVG } from "@/lib/qr-utils"
 import QRCode from "react-qr-code"
-import { QrCode, Download, FileImage, Package, Search } from "lucide-react"
+import { QrCode, Download, FileImage, Package, Search, Trash2 } from "lucide-react"
 
 export function QRCodeGenerator() {
   const { events } = useEvents()
-  const { getGuestsByEvent } = useGuests()
+  const { getGuestsByEvent, deleteGuestsBulk } = useGuests()
+  const { user } = useAuth()
+  const { toast } = useToast()
   const [selectedEventId, setSelectedEventId] = useState<string>("")
   const [searchTerm, setSearchTerm] = useState("")
   const [selectedGuests, setSelectedGuests] = useState<Set<string>>(new Set())
   const [generating, setGenerating] = useState(false)
+
+  const role = (user?.app_metadata?.role ?? "usher") as "admin" | "usher"
+  const isAdmin = role === "admin"
 
   const selectedEvent = events.find((e) => e.id === selectedEventId)
   const eventGuests = useMemo(() => {
@@ -63,7 +70,7 @@ export function QRCodeGenerator() {
     const svgString = await generateQRCodeSVG(qrData, 400)
     const filename = `${guest.name.replace(/[^a-zA-Z0-9]/g, "-")}-${guest.uniqueCode}.png`
 
-    await downloadQRCodeAsPNGFromSVG(svgString, filename, 400)
+    await downloadQRCodeAsPNGFromSVG(svgString, filename, 400, guest.name)
   }
 
   const downloadSelectedQRs = async () => {
@@ -81,7 +88,7 @@ export function QRCodeGenerator() {
         const svgString = await generateQRCodeSVG(qrData, 400)
         const filename = `${guest.name.replace(/[^a-zA-Z0-9]/g, "-")}-${guest.uniqueCode}.png`
 
-        await downloadQRCodeAsPNGFromSVG(svgString, filename, 400)
+        await downloadQRCodeAsPNGFromSVG(svgString, filename, 400, guest.name)
 
         // Small delay between downloads to prevent browser blocking
         if (i < selectedGuestsList.length - 1) {
@@ -95,6 +102,22 @@ export function QRCodeGenerator() {
 
   const generateBulkPDF = async () => {
     if (selectedGuests.size === 0 || !selectedEvent) return
+
+    // Warn user if selecting many guests
+    if (selectedGuests.size > 1000) {
+      toast({
+        title: "Too Many Guests",
+        description: `Maximum is 1000 guests per bundle. You selected ${selectedGuests.size} guests. Please reduce your selection.`,
+        variant: "destructive",
+      })
+      return
+    }
+
+    if (selectedGuests.size > 500) {
+      if (!confirm(`You are about to generate ${selectedGuests.size} QR codes. This may take several minutes. Continue?`)) {
+        return
+      }
+    }
 
     setGenerating(true)
 
@@ -114,20 +137,46 @@ export function QRCodeGenerator() {
       })
 
       if (!response.ok) {
-        throw new Error("Failed to generate PDF bundle")
+        const errorData = await response.json().catch(() => ({}))
+        const errorMessage = errorData.error || "Failed to generate PDF bundle"
+        toast({
+          title: "Error",
+          description: errorMessage,
+          variant: "destructive",
+        })
+        throw new Error(errorMessage)
       }
 
       const blob = await response.blob()
+      
+      // Check if blob is empty or too small
+      if (blob.size === 0 || blob.size < 100) {
+        throw new Error("Generated PDF is empty. Please try again or contact support.")
+      }
+      
       const url = window.URL.createObjectURL(blob)
       const link = document.createElement("a")
       link.href = url
-      link.download = `guestpass-${selectedEvent.id}-bundle.pdf`
+      const eventName = selectedEvent.title.replace(/[^a-zA-Z0-9]/g, "-")
+      link.download = `${eventName}-QR-Codes.pdf`
       document.body.appendChild(link)
       link.click()
       link.remove()
       window.URL.revokeObjectURL(url)
+      
+      toast({
+        title: "Success",
+        description: `PDF with ${selectedGuests.size} QR codes downloaded successfully!`,
+      })
     } catch (error) {
       console.error("Error generating PDF bundle:", error)
+      if (error instanceof Error && !error.message.includes("Failed to generate")) {
+        toast({
+          title: "Error",
+          description: error.message,
+          variant: "destructive",
+        })
+      }
     } finally {
       setGenerating(false)
     }
@@ -135,6 +184,22 @@ export function QRCodeGenerator() {
 
   const generateBulkZIP = async () => {
     if (selectedGuests.size === 0 || !selectedEvent) return
+
+    // Warn user if selecting many guests
+    if (selectedGuests.size > 1000) {
+      toast({
+        title: "Too Many Guests",
+        description: `Maximum is 1000 guests per bundle. You selected ${selectedGuests.size} guests. Please reduce your selection.`,
+        variant: "destructive",
+      })
+      return
+    }
+
+    if (selectedGuests.size > 500) {
+      if (!confirm(`You are about to generate ${selectedGuests.size} QR codes. This may take several minutes. Continue?`)) {
+        return
+      }
+    }
 
     setGenerating(true)
 
@@ -154,22 +219,90 @@ export function QRCodeGenerator() {
       })
 
       if (!response.ok) {
-        throw new Error("Failed to generate ZIP bundle")
+        const errorData = await response.json().catch(() => ({}))
+        const errorMessage = errorData.error || "Failed to generate ZIP bundle"
+        toast({
+          title: "Error",
+          description: errorMessage,
+          variant: "destructive",
+        })
+        throw new Error(errorMessage)
       }
 
+      // Check Content-Type to ensure we got a ZIP file
+      const contentType = response.headers.get("Content-Type")
+      console.log("Response Content-Type:", contentType)
+      
       const blob = await response.blob()
+      console.log("Blob size:", blob.size, "bytes")
+      
+      // If we got JSON instead of a ZIP, try to parse the error
+      if (contentType?.includes("application/json")) {
+        const errorData = await blob.text().then(text => JSON.parse(text)).catch(() => ({}))
+        const errorMessage = errorData.error || "Server returned an error instead of ZIP file"
+        toast({
+          title: "Error",
+          description: errorMessage,
+          variant: "destructive",
+        })
+        throw new Error(errorMessage)
+      }
+      
+      // Check if blob is empty or too small
+      if (blob.size === 0 || blob.size < 100) {
+        throw new Error(`Generated ZIP is empty or too small (${blob.size} bytes). Please check the browser console for details.`)
+      }
+      
       const url = window.URL.createObjectURL(blob)
       const link = document.createElement("a")
       link.href = url
-      link.download = `guestpass-${selectedEvent.id}-bundle.zip`
+      const eventName = selectedEvent.title.replace(/[^a-zA-Z0-9]/g, "-")
+      link.download = `${eventName}-QR-Codes.zip`
       document.body.appendChild(link)
       link.click()
       link.remove()
       window.URL.revokeObjectURL(url)
+      
+      toast({
+        title: "Success",
+        description: `ZIP with ${selectedGuests.size} QR codes downloaded successfully!`,
+      })
     } catch (error) {
       console.error("Error generating ZIP bundle:", error)
+      if (error instanceof Error && !error.message.includes("Failed to generate")) {
+        toast({
+          title: "Error",
+          description: error.message,
+          variant: "destructive",
+        })
+      }
     } finally {
       setGenerating(false)
+    }
+  }
+
+  const handleBulkDelete = async () => {
+    if (selectedGuests.size === 0) return
+
+    if (
+      confirm(
+        `Are you sure you want to delete ${selectedGuests.size} guest(s)? This action cannot be undone.`
+      )
+    ) {
+      try {
+        await deleteGuestsBulk(Array.from(selectedGuests))
+        toast({
+          title: "Guests deleted",
+          description: `${selectedGuests.size} guest(s) have been removed successfully.`,
+        })
+        setSelectedGuests(new Set())
+      } catch (error) {
+        toast({
+          title: "Bulk delete failed",
+          description: "Failed to delete some guests. Please try again.",
+          variant: "destructive",
+        })
+      }
     }
   }
 
@@ -355,6 +488,21 @@ export function QRCodeGenerator() {
                       </Button>
                     </div>
                   </div>
+
+                  {isAdmin && (
+                    <div className="space-y-2">
+                      <Label>Bulk Actions</Label>
+                      <Button
+                        className="w-full justify-start"
+                        variant="destructive"
+                        onClick={handleBulkDelete}
+                        disabled={selectedGuests.size === 0 || generating}
+                      >
+                        <Trash2 className="mr-2 h-4 w-4" />
+                        Delete Selected ({selectedGuests.size})
+                      </Button>
+                    </div>
+                  )}
                 </CardContent>
               </Card>
 

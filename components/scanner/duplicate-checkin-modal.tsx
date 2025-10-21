@@ -19,6 +19,8 @@ interface DuplicateCheckinModalProps {
     checkedInAt?: string
     usherName?: string
     firstCheckinAt?: string
+    seatingArea?: string
+    cuisineChoice?: string
   }
 }
 
@@ -104,17 +106,28 @@ export function DuplicateCheckinModal({ open, onClose, guest }: DuplicateCheckin
 
           {/* Guest Details */}
           <div className="space-y-3 bg-gray-50 rounded-lg p-4">
-            {guest.email && (
-              <div className="flex items-center gap-3 text-sm">
-                <Mail className="h-4 w-4 text-gray-400 flex-shrink-0" />
-                <span className="text-gray-700">{guest.email}</span>
-              </div>
-            )}
-
             {guest.phone && (
               <div className="flex items-center gap-3 text-sm">
                 <Phone className="h-4 w-4 text-gray-400 flex-shrink-0" />
                 <span className="text-gray-700">{guest.phone}</span>
+              </div>
+            )}
+
+            {guest.seatingArea && (
+              <div className="flex items-center gap-3 text-sm">
+                <span className="text-gray-400 flex-shrink-0">🪑</span>
+                <span className="text-gray-700">
+                  <span className="font-medium">Seating:</span> {guest.seatingArea}
+                </span>
+              </div>
+            )}
+
+            {guest.cuisineChoice && (
+              <div className="flex items-center gap-3 text-sm">
+                <span className="text-gray-400 flex-shrink-0">🍽️</span>
+                <span className="text-gray-700">
+                  <span className="font-medium">Cuisine:</span> {guest.cuisineChoice}
+                </span>
               </div>
             )}
 

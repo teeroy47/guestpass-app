@@ -17,14 +17,16 @@ import { QRCodeGenerator } from "@/components/qr/qr-code-generator"
 import { QRScanner } from "@/components/scanner/qr-scanner"
 import { AnalyticsDashboard } from "@/components/analytics/analytics-dashboard"
 import { ActiveEventsRealtime } from "@/components/dashboard/active-events-realtime"
+import { ActiveScannerSessions } from "@/components/dashboard/active-scanner-sessions"
 import { UsherStatistics } from "@/components/dashboard/usher-statistics"
 import { UserProfile } from "@/components/profile/user-profile"
-import { QrCode, Users, Calendar, Upload, Scan, Plus, BarChart3, LogOut, User } from "lucide-react"
+import { UserManagement } from "@/components/admin/user-management"
+import { QrCode, Users, Calendar, Upload, Scan, Plus, BarChart3, LogOut, User, ShieldCheck } from "lucide-react"
 
 export function Dashboard() {
   const { events, loading: eventsLoading } = useEvents()
   const { guests, loading: guestsLoading } = useGuests()
-  const { user, signOut, displayName: authDisplayName } = useAuth()
+  const { user, signOut, displayName: authDisplayName, userRole } = useAuth()
   const { toast } = useToast()
   const [activeTab, setActiveTab] = useState("overview")
   const [scannerOpen, setScannerOpen] = useState(false)
@@ -35,8 +37,10 @@ export function Dashboard() {
 
   // Use display name from auth context (which comes from database), fallback to email
   const displayName = authDisplayName ?? user?.email ?? "GuestPass User"
-  const role = (user?.app_metadata?.role ?? "usher") as "admin" | "usher"
+  // Use role from database (via context), fallback to app_metadata, then default to usher
+  const role = (userRole ?? user?.app_metadata?.role ?? "usher") as "admin" | "usher"
   const isAdmin = role === "admin"
+  const isSuperAdmin = user?.email?.toLowerCase() === "chiunyet@africau.edu"
 
   // Calculate stats
   const totalEvents = events.length
@@ -46,6 +50,7 @@ export function Dashboard() {
   const attendanceRate = totalGuests > 0 ? (totalCheckedIn / totalGuests) * 100 : 0
   
   // Calculate active scanners (guests checked in within the last 5 minutes)
+  // This will be refreshed automatically when guests context updates
   const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000)
   const activeScanners = new Set(
     guests
@@ -136,6 +141,7 @@ export function Dashboard() {
               <TabsTrigger value="qr-codes" className="text-xs sm:text-sm whitespace-nowrap">QR Codes</TabsTrigger>
               <TabsTrigger value="scanner" className="text-xs sm:text-sm">Scanner</TabsTrigger>
               {isAdmin && <TabsTrigger value="analytics" className="text-xs sm:text-sm">Analytics</TabsTrigger>}
+              {isSuperAdmin && <TabsTrigger value="users" className="text-xs sm:text-sm">Users</TabsTrigger>}
               <TabsTrigger value="profile" className="text-xs sm:text-sm">Profile</TabsTrigger>
             </TabsList>
           </div>
@@ -259,6 +265,13 @@ export function Dashboard() {
                   </Card>
                 </div>
 
+                {/* Active Scanner Sessions - Admin Only */}
+                {isAdmin && (
+                  <div className="mt-6">
+                    <ActiveScannerSessions />
+                  </div>
+                )}
+
                 {/* Usher Statistics Section - Quick Access */}
                 <div className="mt-6">
                   <UsherStatistics />
@@ -268,7 +281,7 @@ export function Dashboard() {
           </TabsContent>
 
           <TabsContent value="events">
-            <EventList />
+            <EventList onNavigateToGuests={() => setActiveTab("guests")} />
           </TabsContent>
 
           {isAdmin && (
@@ -340,6 +353,12 @@ export function Dashboard() {
               <div className="mt-6">
                 <UsherStatistics />
               </div>
+            </TabsContent>
+          )}
+
+          {isSuperAdmin && (
+            <TabsContent value="users">
+              <UserManagement />
             </TabsContent>
           )}
 

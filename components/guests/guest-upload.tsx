@@ -17,6 +17,9 @@ import { Upload, FileText, Download, AlertCircle, CheckCircle, Users } from "luc
 interface ParsedGuest {
   name: string
   email?: string
+  phone?: string
+  seatingArea?: 'Reserved' | 'Free Seating'
+  cuisineChoice?: 'Traditional' | 'Western'
   row: number
 }
 
@@ -77,6 +80,9 @@ export function GuestUpload() {
         const headers = lines[0].split(",").map((h) => h.trim().toLowerCase())
         const nameIndex = headers.findIndex((h) => h.includes("name"))
         const emailIndex = headers.findIndex((h) => h.includes("email"))
+        const phoneIndex = headers.findIndex((h) => h.includes("phone"))
+        const seatingIndex = headers.findIndex((h) => h.includes("seating"))
+        const cuisineIndex = headers.findIndex((h) => h.includes("cuisine"))
 
         if (nameIndex === -1) {
           setError("CSV file must contain a 'name' column")
@@ -101,10 +107,36 @@ export function GuestUpload() {
           }
 
           const email = emailIndex !== -1 ? values[emailIndex]?.trim() : undefined
+          const phone = phoneIndex !== -1 ? values[phoneIndex]?.trim() : undefined
+          
+          // Parse seating area with validation
+          let seatingArea: 'Reserved' | 'Free Seating' = 'Free Seating'
+          if (seatingIndex !== -1) {
+            const seatingValue = values[seatingIndex]?.trim()
+            if (seatingValue === 'Reserved' || seatingValue === 'Free Seating') {
+              seatingArea = seatingValue
+            } else if (seatingValue) {
+              errors.push(`Row ${i + 1}: Invalid seating area '${seatingValue}'. Must be 'Reserved' or 'Free Seating'`)
+            }
+          }
+          
+          // Parse cuisine choice with validation
+          let cuisineChoice: 'Traditional' | 'Western' = 'Traditional'
+          if (cuisineIndex !== -1) {
+            const cuisineValue = values[cuisineIndex]?.trim()
+            if (cuisineValue === 'Traditional' || cuisineValue === 'Western') {
+              cuisineChoice = cuisineValue
+            } else if (cuisineValue) {
+              errors.push(`Row ${i + 1}: Invalid cuisine choice '${cuisineValue}'. Must be 'Traditional' or 'Western'`)
+            }
+          }
 
           guests.push({
             name,
             email: email || undefined,
+            phone: phone || undefined,
+            seatingArea,
+            cuisineChoice,
             row: i + 1,
           })
         }
@@ -137,6 +169,9 @@ export function GuestUpload() {
         eventId: selectedEventId,
         name: guest.name,
         email: guest.email,
+        phone: guest.phone,
+        seatingArea: guest.seatingArea,
+        cuisineChoice: guest.cuisineChoice,
       }))
 
       // Simulate progress for better UX
@@ -165,7 +200,7 @@ export function GuestUpload() {
 
   const downloadTemplate = () => {
     const csvContent =
-      "name,email\nJohn Smith,john@example.com\nSarah Johnson,sarah@example.com\nMichael Chen,michael@example.com"
+      "name,email,phone,seating,cuisine\nJohn Smith,john@example.com,+263785211893,Reserved,Traditional\nSarah Johnson,sarah@example.com,+263785211894,Free Seating,Western\nMichael Chen,michael@example.com,+263785211895,Free Seating,Traditional"
     const blob = new Blob([csvContent], { type: "text/csv" })
     const url = window.URL.createObjectURL(blob)
     const a = document.createElement("a")
@@ -266,6 +301,15 @@ export function GuestUpload() {
                   <li>
                     • <strong>email</strong> - Guest email address (optional)
                   </li>
+                  <li>
+                    • <strong>phone</strong> - Guest phone number (optional, format: +263785211893)
+                  </li>
+                  <li>
+                    • <strong>seating</strong> - Seating arrangement (optional: Reserved or Free Seating)
+                  </li>
+                  <li>
+                    • <strong>cuisine</strong> - Cuisine preference (optional: Traditional or Western)
+                  </li>
                 </ul>
               </div>
 
@@ -282,11 +326,11 @@ export function GuestUpload() {
               <div>
                 <h4 className="font-medium">Example CSV</h4>
                 <div className="bg-muted p-3 rounded text-sm font-mono">
-                  name,email
+                  name,email,phone,seating,cuisine
                   <br />
-                  John Smith,john@example.com
+                  John Smith,john@example.com,+263785211893,Reserved,Traditional
                   <br />
-                  Sarah Johnson,sarah@example.com
+                  Sarah Johnson,sarah@example.com,+263785211894,Free Seating,Western
                 </div>
               </div>
             </div>
@@ -324,9 +368,14 @@ export function GuestUpload() {
               <div className="space-y-2">
                 {parsedGuests.slice(0, 10).map((guest, index) => (
                   <div key={index} className="flex justify-between items-center p-2 bg-muted rounded">
-                    <div>
+                    <div className="flex-1">
                       <p className="font-medium">{guest.name}</p>
                       {guest.email && <p className="text-sm text-muted-foreground">{guest.email}</p>}
+                      <div className="flex gap-3 mt-1">
+                        {guest.phone && <p className="text-xs text-muted-foreground">📱 {guest.phone}</p>}
+                        {guest.seatingArea && <p className="text-xs text-muted-foreground">🪑 {guest.seatingArea}</p>}
+                        {guest.cuisineChoice && <p className="text-xs text-muted-foreground">🍽️ {guest.cuisineChoice}</p>}
+                      </div>
                     </div>
                     <span className="text-xs text-muted-foreground">Row {guest.row}</span>
                   </div>

@@ -17,6 +17,27 @@ interface CheckInNotification {
   timestamp: number
 }
 
+// Utility function to format time ago with accurate calculations
+function formatTimeAgo(timestamp: string | number): string {
+  const now = Date.now()
+  const time = typeof timestamp === 'string' ? new Date(timestamp).getTime() : timestamp
+  const diffMs = now - time
+  const diffSeconds = Math.floor(diffMs / 1000)
+  const diffMinutes = Math.floor(diffSeconds / 60)
+  const diffHours = Math.floor(diffMinutes / 60)
+  const diffDays = Math.floor(diffHours / 24)
+
+  if (diffSeconds < 60) {
+    return `${diffSeconds}s ago`
+  } else if (diffMinutes < 60) {
+    return `${diffMinutes}m ago`
+  } else if (diffHours < 24) {
+    return `${diffHours}h ago`
+  } else {
+    return `${diffDays}d ago`
+  }
+}
+
 export function ActiveEventsRealtime() {
   const { events } = useEvents()
   const { guests, getGuestsByEvent } = useGuests()
@@ -24,6 +45,7 @@ export function ActiveEventsRealtime() {
   const [recentCheckIns, setRecentCheckIns] = useState<CheckInNotification[]>([])
   const lastCheckInCountRef = useRef<Map<string, number>>(new Map())
   const supabaseClient = useRef(createBrowserSupabaseClient())
+  const isMountedRef = useRef(true)
 
   // Filter active events only
   const activeEvents = events.filter((e) => e.status === "active")
@@ -45,6 +67,8 @@ export function ActiveEventsRealtime() {
 
   // Set up real-time subscription for guest check-ins (optimized for multiple concurrent events)
   useEffect(() => {
+    isMountedRef.current = true
+
     if (activeEvents.length === 0) return
 
     const activeEventIds = activeEvents.map((e) => e.id)
@@ -66,6 +90,9 @@ export function ActiveEventsRealtime() {
           filter: `event_id=in.(${activeEventIds.join(",")})`,
         },
         (payload) => {
+          // Prevent state updates on unmounted component
+          if (!isMountedRef.current) return
+
           const updatedGuest = payload.new as any
           const oldGuest = payload.old as any
 
@@ -118,29 +145,40 @@ export function ActiveEventsRealtime() {
           console.log("✅ Real-time analytics connected")
         } else if (status === "CHANNEL_ERROR") {
           console.error("❌ Real-time analytics connection error:", err)
-          // Attempt to reconnect after 3 seconds
+          // Attempt to reconnect after 3 seconds (only if still mounted)
           setTimeout(() => {
+            if (!isMountedRef.current) return
             console.log("🔄 Attempting to reconnect real-time analytics...")
             channel.subscribe()
           }, 3000)
         } else if (status === "TIMED_OUT") {
           console.warn("⏱️ Real-time analytics connection timed out, reconnecting...")
-          channel.subscribe()
+          if (isMountedRef.current) {
+            channel.subscribe()
+          }
         } else if (status === "CLOSED") {
-          console.warn("🔌 Real-time analytics connection closed")
+          console.debug("🔌 Real-time analytics connection closed")
         }
       })
 
     // Cleanup subscription on unmount
     return () => {
-      console.log("🧹 Cleaning up real-time analytics subscription")
-      supabaseClient.current.removeChannel(channel)
+      isMountedRef.current = false
+      console.debug("🧹 Cleaning up real-time analytics subscription")
+      try {
+        supabaseClient.current.removeChannel(channel)
+      } catch (error) {
+        console.debug("Error during analytics cleanup:", error)
+      }
     }
   }, [activeEvents, toast])
 
   // Auto-remove old notifications after 10 seconds
   useEffect(() => {
     const interval = setInterval(() => {
+      // Prevent state updates on unmounted component
+      if (!isMountedRef.current) return
+      
       const now = Date.now()
       setRecentCheckIns((prev) => prev.filter((n) => now - n.timestamp < 10000))
     }, 1000)
@@ -212,7 +250,7 @@ export function ActiveEventsRealtime() {
                   </div>
                 </div>
                 <span className="text-xs text-muted-foreground flex-shrink-0">
-                  {Math.floor((Date.now() - checkIn.timestamp) / 1000)}s ago
+                  {formatTimeAgo(checkIn.timestamp)}
                 </span>
               </div>
             ))}
@@ -321,7 +359,7 @@ export function ActiveEventsRealtime() {
                               <span className="truncate font-medium">{guest.name}</span>
                             </div>
                             <span className="text-muted-foreground flex-shrink-0 ml-2">
-                              {Math.floor((Date.now() - new Date(guest.checkedInAt!).getTime()) / 60000)}m ago
+                              {formatTimeAgo(guest.checkedInAt!)}
                             </span>
                           </div>
                         ))}

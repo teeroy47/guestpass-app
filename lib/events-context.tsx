@@ -1,7 +1,8 @@
 "use client"
 
-import { createContext, useContext, useEffect, useState, type ReactNode } from "react"
+import { createContext, useContext, useEffect, useState, useRef, type ReactNode } from "react"
 import { EventService, type CreateEventInput } from "./event-service"
+import { createBrowserSupabaseClient } from "./supabase/browser"
 
 export interface Event {
   id: string
@@ -24,6 +25,7 @@ interface EventsContextType {
   deleteEvent: (id: string) => Promise<void>
   getEvent: (id: string) => Event | undefined
   refreshEvents: () => Promise<void>
+  refreshEventsSilently: () => Promise<void>
 }
 
 const EventsContext = createContext<EventsContextType | undefined>(undefined)
@@ -39,6 +41,8 @@ export function useEvents() {
 export function EventsProvider({ children }: { children: ReactNode }) {
   const [events, setEvents] = useState<Event[]>([])
   const [loading, setLoading] = useState(true)
+  const supabaseClient = useRef(createBrowserSupabaseClient())
+  const isMountedRef = useRef(true)
 
   const fetchEvents = async () => {
     try {
@@ -80,6 +84,101 @@ export function EventsProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     fetchEvents()
+  }, [])
+
+  // Set up real-time subscription for event updates
+  useEffect(() => {
+    isMountedRef.current = true
+    console.log("🔄 Setting up real-time event subscription")
+    
+    const channel = supabaseClient.current
+      .channel("events-realtime", {
+        config: {
+          broadcast: { self: false },
+          presence: { key: "" },
+        },
+      })
+      .on(
+        "postgres_changes",
+        {
+          event: "*", // Listen to all changes (INSERT, UPDATE, DELETE)
+          schema: "public",
+          table: "events",
+        },
+        (payload) => {
+          // Only update state if component is still mounted
+          if (!isMountedRef.current) return
+          
+          console.log("📡 Real-time event update received:", payload.eventType)
+          
+          if (payload.eventType === "INSERT") {
+            const newEvent = payload.new as any
+            setEvents((prev) => {
+              // Avoid duplicates
+              if (prev.some((e) => e.id === newEvent.id)) return prev
+              return [...prev, {
+                id: newEvent.id,
+                title: newEvent.title,
+                description: newEvent.description,
+                startsAt: newEvent.starts_at,
+                venue: newEvent.venue,
+                ownerId: newEvent.owner_id,
+                createdAt: newEvent.created_at,
+                totalGuests: newEvent.total_guests || 0,
+                checkedInGuests: newEvent.checked_in_guests || 0,
+                status: newEvent.status as Event["status"],
+              }]
+            })
+          } else if (payload.eventType === "UPDATE") {
+            const updatedEvent = payload.new as any
+            setEvents((prev) =>
+              prev.map((event) =>
+                event.id === updatedEvent.id
+                  ? {
+                      ...event,
+                      title: updatedEvent.title,
+                      description: updatedEvent.description,
+                      startsAt: updatedEvent.starts_at,
+                      venue: updatedEvent.venue,
+                      totalGuests: updatedEvent.total_guests || 0,
+                      checkedInGuests: updatedEvent.checked_in_guests || 0,
+                      status: updatedEvent.status as Event["status"],
+                    }
+                  : event
+              )
+            )
+          } else if (payload.eventType === "DELETE") {
+            const deletedEvent = payload.old as any
+            setEvents((prev) => prev.filter((event) => event.id !== deletedEvent.id))
+          }
+        }
+      )
+      .subscribe((status, err) => {
+        if (status === "SUBSCRIBED") {
+          console.log("✅ Real-time event subscription connected")
+        } else if (status === "CHANNEL_ERROR") {
+          console.error("❌ Real-time event subscription error:", err)
+          setTimeout(() => {
+            if (isMountedRef.current) {
+              console.log("🔄 Attempting to reconnect event subscription...")
+              channel.subscribe()
+            }
+          }, 3000)
+        } else if (status === "TIMED_OUT") {
+          console.warn("⏱️ Real-time event subscription timed out, reconnecting...")
+          if (isMountedRef.current) {
+            channel.subscribe()
+          }
+        } else if (status === "CLOSED") {
+          console.warn("🔌 Real-time event subscription closed")
+        }
+      })
+
+    return () => {
+      isMountedRef.current = false
+      console.log("🧹 Cleaning up real-time event subscription")
+      supabaseClient.current.removeChannel(channel)
+    }
   }, [])
 
   const createEvent = async (eventData: Omit<Event, "id" | "createdAt">) => {
@@ -160,6 +259,41 @@ export function EventsProvider({ children }: { children: ReactNode }) {
     await fetchEvents()
   }
 
+  const refreshEventsSilently = async () => {
+    try {
+      // Fetch events without setting loading state
+      const data = await EventService.listEvents()
+      const now = new Date()
+      
+      // Map events and auto-update status based on date
+      const mappedEvents = data.map((event) => {
+        const eventDate = new Date(event.startsAt)
+        // Consider event completed if it's more than 24 hours past the start time
+        const completionThreshold = new Date(eventDate.getTime() + 24 * 60 * 60 * 1000)
+        
+        let status = event.status as Event["status"]
+        
+        // Auto-complete events that have passed
+        if (status === "active" && now > completionThreshold) {
+          status = "completed"
+          // Update in background (don't await to avoid blocking UI)
+          EventService.updateEvent(event.id, { status: "completed" }).catch(err => 
+            console.error("Failed to auto-complete event", event.id, err)
+          )
+        }
+        
+        return {
+          ...event,
+          status,
+        }
+      })
+      
+      setEvents(mappedEvents)
+    } catch (error) {
+      console.error("Failed to silently refresh events", error)
+    }
+  }
+
   const value = {
     events,
     loading,
@@ -168,6 +302,7 @@ export function EventsProvider({ children }: { children: ReactNode }) {
     deleteEvent,
     getEvent,
     refreshEvents,
+    refreshEventsSilently,
   }
 
   return <EventsContext.Provider value={value}>{children}</EventsContext.Provider>

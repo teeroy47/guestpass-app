@@ -196,62 +196,70 @@ export function AnalyticsDashboard({ eventId: propEventId }: AnalyticsDashboardP
     `
   })
 
-  // Calculate check-in timing relative to event start
-  // Negative = early, Positive = late
-  const checkInTimings = filteredGuests
-    .filter((guest) => guest.checkedIn && guest.checkedInAt)
-    .map((guest) => {
-      const event = eventLookup.get(guest.eventId)
-      if (!event || !guest.checkedInAt) return null
-
-      const checkInDate = new Date(guest.checkedInAt)
-      const eventStartDate = new Date(event.startsAt)
-
-      if (!isValid(checkInDate) || !isValid(eventStartDate)) {
-        return null
-      }
-
-      // Return actual difference (negative = early, positive = late)
-      return differenceInMinutes(checkInDate, eventStartDate)
+  // Calculate average check-in time for completed events only
+  // This measures the average time from first scan to each guest check-in
+  const calculateAverageCheckInTime = () => {
+    // Only include completed events
+    const completedEventsList = filteredEvents.filter((event) => {
+      if (event.status === "completed") return true
+      // Also include events that have passed their end date
+      const eventEndDate = new Date(event.endsAt || event.startsAt)
+      return isValid(eventEndDate) && eventEndDate < new Date()
     })
-    .filter((value): value is number => value !== null)
 
-  const averageCheckInTiming =
-    checkInTimings.length > 0 
-      ? checkInTimings.reduce((sum, minutes) => sum + minutes, 0) / checkInTimings.length 
-      : null
-
-  // Format the timing display
-  const formatCheckInTiming = (avgMinutes: number | null) => {
-    if (avgMinutes === null) return { display: "--", label: "No data yet" }
-    
-    const absMinutes = Math.abs(avgMinutes)
-    
-    // Convert to hours and minutes if >= 60 minutes
-    if (absMinutes >= 60) {
-      const hours = Math.floor(absMinutes / 60)
-      const mins = Math.round(absMinutes % 60)
-      const timeStr = mins > 0 ? `${hours}h ${mins}m` : `${hours}h`
-      
-      if (avgMinutes < 0) {
-        return { display: timeStr, label: "before event start", isEarly: true }
-      } else {
-        return { display: timeStr, label: "after event start", isEarly: false }
-      }
+    if (completedEventsList.length === 0) {
+      return { display: "--", label: "No completed events", isEarly: null }
     }
-    
-    // Less than 60 minutes - show in minutes
-    const roundedMins = Math.round(absMinutes)
-    if (avgMinutes < -5) {
-      return { display: `${roundedMins}m`, label: "before event start", isEarly: true }
-    } else if (avgMinutes > 5) {
-      return { display: `${roundedMins}m`, label: "after event start", isEarly: false }
+
+    let totalCheckInDurations: number[] = []
+
+    completedEventsList.forEach((event) => {
+      const eventGuests = filteredGuests.filter((g) => g.eventId === event.id && g.checkedIn && g.checkedInAt)
+      
+      if (eventGuests.length === 0) return
+
+      // Find the first check-in time for this event (when scanning started)
+      const checkInTimes = eventGuests
+        .map((g) => new Date(g.checkedInAt!).getTime())
+        .filter((time) => !isNaN(time))
+      
+      if (checkInTimes.length === 0) return
+
+      const firstCheckInTime = Math.min(...checkInTimes)
+
+      // Calculate time from first scan to each subsequent check-in
+      eventGuests.forEach((guest) => {
+        const guestCheckInTime = new Date(guest.checkedInAt!).getTime()
+        if (!isNaN(guestCheckInTime)) {
+          const durationMinutes = (guestCheckInTime - firstCheckInTime) / (1000 * 60)
+          totalCheckInDurations.push(durationMinutes)
+        }
+      })
+    })
+
+    if (totalCheckInDurations.length === 0) {
+      return { display: "--", label: "No check-in data", isEarly: null }
+    }
+
+    // Calculate average
+    const avgMinutes = totalCheckInDurations.reduce((sum, dur) => sum + dur, 0) / totalCheckInDurations.length
+
+    // Format the display
+    if (avgMinutes < 1) {
+      const seconds = Math.round(avgMinutes * 60)
+      return { display: `${seconds}s`, label: "per guest check-in", isEarly: true }
+    } else if (avgMinutes < 60) {
+      const mins = Math.round(avgMinutes)
+      return { display: `${mins}m`, label: "per guest check-in", isEarly: null }
     } else {
-      return { display: "On time", label: "±5 min of start", isEarly: null }
+      const hours = Math.floor(avgMinutes / 60)
+      const mins = Math.round(avgMinutes % 60)
+      const timeStr = mins > 0 ? `${hours}h ${mins}m` : `${hours}h`
+      return { display: timeStr, label: "per guest check-in", isEarly: false }
     }
   }
 
-  const checkInTimingDisplay = formatCheckInTiming(averageCheckInTiming)
+  const checkInTimingDisplay = calculateAverageCheckInTime()
 
   const eventAttendanceData = filteredEvents.map((event) => {
     const eventGuests = guests.filter((guest) => guest.eventId === event.id)

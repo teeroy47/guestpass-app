@@ -9,6 +9,7 @@ interface AuthContextType {
   loading: boolean
   displayName: string | null
   hasDisplayName: boolean
+  userRole: string | null
   refreshUser: () => Promise<void>
   updateDisplayName: (name: string) => Promise<void>
   signInWithOtp: (email: string) => Promise<{ error: string | null }>
@@ -34,24 +35,48 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null)
   const [loading, setLoading] = useState(true)
   const [displayName, setDisplayName] = useState<string | null>(null)
+  const [userRole, setUserRole] = useState<string | null>(null)
   const supabase = useMemo(() => createBrowserSupabaseClient(), [])
 
   const fetchDisplayName = useCallback(async (userId: string) => {
     try {
       console.log("[auth] fetchDisplayName: Querying for user", userId)
+      
+      // Check if we have a valid session before querying
+      const { data: { session } } = await supabase.auth.getSession()
+      if (!session) {
+        console.warn("[auth] fetchDisplayName: No active session, skipping query")
+        return null
+      }
+      console.log("[auth] fetchDisplayName: Session valid, user ID in token:", session.user.id)
+      
       const { data, error } = await supabase
         .from("users")
-        .select("display_name")
+        .select("display_name, full_name, role")
         .eq("id", userId)
-        .single()
 
       if (error) {
         console.error("[auth] fetchDisplayName error", error)
         return null
       }
 
-      console.log("[auth] fetchDisplayName: Query result", data)
-      return data?.display_name || null
+      // Check if we got results
+      if (!data || data.length === 0) {
+        console.warn("[auth] fetchDisplayName: No user found with id", userId)
+        return null
+      }
+
+      const userData = data[0]
+      console.log("[auth] fetchDisplayName: Query result", userData)
+      
+      // Update role state
+      if (userData?.role) {
+        setUserRole(userData.role)
+        console.log("[auth] User role updated:", userData.role)
+      }
+      
+      // Use display_name if available, otherwise fall back to full_name
+      return userData?.display_name || userData?.full_name || null
     } catch (error) {
       console.error("[auth] fetchDisplayName unexpected error", error)
       return null
@@ -70,22 +95,44 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const fullName =
       typeof metadataFullName === "string" && metadataFullName.trim().length > 0 ? metadataFullName : email
 
-    // Determine role: only chiunyet@africau.edu gets admin, everyone else gets usher
-    const metadataRole = authUser.app_metadata?.role
-    let role: string
-    
-    if (metadataRole && typeof metadataRole === "string" && metadataRole.trim().length > 0) {
-      // Use existing role from metadata
-      role = metadataRole
-    } else if (email.toLowerCase() === "chiunyet@africau.edu") {
-      // Admin email gets admin role
-      role = "admin"
-    } else {
-      // All other users get usher role by default
-      role = "usher"
-    }
-
     try {
+      // Check if we have a valid session before querying
+      const { data: { session } } = await supabase.auth.getSession()
+      if (!session) {
+        console.warn("[auth] ensureUserProfile: No active session, skipping profile check")
+        return
+      }
+      console.log("[auth] ensureUserProfile: Session valid, user ID in token:", session.user.id)
+      
+      // First, check if user already exists in database
+      const { data: existingUsers, error: fetchError } = await supabase
+        .from("users")
+        .select("role")
+        .eq("id", authUser.id)
+
+      let role: string
+
+      if (existingUsers && existingUsers.length > 0 && !fetchError) {
+        // User exists - use their existing role from database
+        role = existingUsers[0].role
+        console.log("[auth] Using existing role from database:", role)
+      } else {
+        // New user - determine initial role
+        const metadataRole = authUser.app_metadata?.role
+        
+        if (metadataRole && typeof metadataRole === "string" && metadataRole.trim().length > 0) {
+          // Use existing role from metadata
+          role = metadataRole
+        } else if (email.toLowerCase() === "chiunyet@africau.edu") {
+          // Admin email gets admin role
+          role = "admin"
+        } else {
+          // All other users get usher role by default
+          role = "usher"
+        }
+        console.log("[auth] Setting initial role for new user:", role)
+      }
+
       const { error } = await supabase
         .from("users")
         .upsert(
@@ -103,15 +150,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         // Don't throw - we want to continue even if profile creation fails
       } else {
         console.log("[auth] ensureUserProfile success", authUser.id, "with role:", role)
-        
-        // Fetch display name after ensuring profile
-        const name = await fetchDisplayName(authUser.id)
-        setDisplayName(name)
-        console.log("[auth] Display name fetched:", name)
       }
+      
+      // ALWAYS fetch display name and role, even if upsert failed
+      // This ensures we have the latest data from the database
+      const name = await fetchDisplayName(authUser.id)
+      setDisplayName(name)
+      console.log("[auth] Display name fetched:", name)
     } catch (error) {
       console.error("[auth] ensureUserProfile unexpected error", error)
-      // Don't throw - we want to continue even if profile creation fails
+      // Even on error, try to fetch display name and role
+      try {
+        const name = await fetchDisplayName(authUser.id)
+        setDisplayName(name)
+        console.log("[auth] Display name fetched after error:", name)
+      } catch (fetchError) {
+        console.error("[auth] Failed to fetch display name after error", fetchError)
+      }
     }
   }, [supabase, fetchDisplayName])
 
@@ -188,10 +243,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setLoading(false)
       console.log("[auth] Auth state updated, loading complete")
 
-      // Clear display name if user signed out
+      // Clear display name and role if user signed out
       if (!sessionUser) {
         setDisplayName(null)
-        console.log("[auth] User signed out, cleared display name")
+        setUserRole(null)
+        console.log("[auth] User signed out, cleared display name and role")
       }
 
       // Ensure profile in background (don't block UI)
@@ -403,6 +459,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     // Set user to null immediately for instant UI feedback
     setUser(null)
     setDisplayName(null)
+    setUserRole(null)
     
     // Sign out from Supabase (this will clear localStorage and trigger onAuthStateChange)
     const { error } = await supabase.auth.signOut({ scope: 'local' })
@@ -422,13 +479,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         hasUser: !!user, 
         loading, 
         displayName, 
-        hasDisplayName 
+        hasDisplayName,
+        userRole
       })
       return {
         user,
         loading,
         displayName,
         hasDisplayName,
+        userRole,
         refreshUser: loadCurrentUser,
         updateDisplayName,
         signInWithOtp,
@@ -440,7 +499,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         signOut,
       }
     },
-    [user, loading, displayName, loadCurrentUser, updateDisplayName, signInWithOtp, signInWithPassword, signUpWithPassword, resetPassword, updatePassword, resendConfirmationEmail, signOut],
+    [user, loading, displayName, userRole, loadCurrentUser, updateDisplayName, signInWithOtp, signInWithPassword, signUpWithPassword, resetPassword, updatePassword, resendConfirmationEmail, signOut],
   )
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>

@@ -81,6 +81,7 @@ export function PhotoCaptureDialog({ open, onClose, onCapture, onSkip, guestName
       const photoBlob = await captureFromVideo(videoRef.current, {
         quality: 0.85,
         format: "jpeg",
+        circular: true, // Ensure circular crop is enabled
       })
 
       // Compress the photo (increased resolution for better quality)

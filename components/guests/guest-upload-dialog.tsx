@@ -205,7 +205,7 @@ export function GuestUploadDialog({ eventId, eventTitle, open, onOpenChange }: G
 
   const downloadTemplate = () => {
     const csvContent =
-      "name,email,phone,seating,cuisine\nJohn Smith,john@example.com,+265991234567,Reserved,Traditional\nSarah Johnson,sarah@example.com,+265992345678,Free Seating,Western\nMichael Chen,michael@example.com,+265993456789,Free Seating,Traditional"
+      "name,email,phone,seating,cuisine\nJohn Smith,john@example.com,+263785211893,Reserved,Traditional\nSarah Johnson,sarah@example.com,+263785211894,Free Seating,Western\nMichael Chen,michael@example.com,+263785211895,Free Seating,Traditional"
     const blob = new Blob([csvContent], { type: "text/csv" })
     const url = window.URL.createObjectURL(blob)
     const a = document.createElement("a")
@@ -319,7 +319,7 @@ export function GuestUploadDialog({ eventId, eventTitle, open, onOpenChange }: G
             <ul className="text-xs text-muted-foreground space-y-1">
               <li>• <strong>name</strong> column is required</li>
               <li>• <strong>email</strong> column is optional</li>
-              <li>• <strong>phone</strong> column is optional (format: +265991234567)</li>
+              <li>• <strong>phone</strong> column is optional (format: +263785211893)</li>
               <li>• <strong>seating</strong> column is optional (Reserved or Free Seating)</li>
               <li>• <strong>cuisine</strong> column is optional (Traditional or Western)</li>
               <li>• First row must contain column headers</li>
@@ -330,8 +330,8 @@ export function GuestUploadDialog({ eventId, eventTitle, open, onOpenChange }: G
               <p className="text-xs font-medium mb-1">Example CSV:</p>
               <div className="bg-background p-2 rounded text-xs font-mono">
                 name,email,phone,seating,cuisine<br />
-                John Smith,john@example.com,+265991234567,Reserved,Traditional<br />
-                Sarah Johnson,sarah@example.com,+265992345678,Free Seating,Western
+                John Smith,john@example.com,+263785211893,Reserved,Traditional<br />
+                Sarah Johnson,sarah@example.com,+263785211894,Free Seating,Western
               </div>
             </div>
           </div>

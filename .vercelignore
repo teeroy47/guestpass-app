@@ -1,0 +1,10 @@
+server/
+.git/
+.gitignore
+*.md
+dist/
+build/
+.next/
+node_modules/.pnpm/
+stress-test/
+scripts/

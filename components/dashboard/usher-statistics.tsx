@@ -24,6 +24,7 @@ export function UsherStatistics() {
   const [selectedEventId, setSelectedEventId] = useState<string>("")
   const [usherStats, setUsherStats] = useState<UsherStats[]>([])
   const supabaseClient = useRef(createBrowserSupabaseClient())
+  const isMountedRef = useRef(true)
 
   // Filter for active events only (with at least one checked-in guest)
   const activeEventsWithCheckIns = events.filter((event) => {
@@ -100,6 +101,8 @@ export function UsherStatistics() {
 
   // Real-time subscription for instant updates when guests check in
   useEffect(() => {
+    isMountedRef.current = true
+
     if (!selectedEventId) return
 
     // Subscribe to changes on the guests table for the selected event
@@ -114,6 +117,9 @@ export function UsherStatistics() {
           filter: `event_id=eq.${selectedEventId}`,
         },
         (payload) => {
+          // Prevent state updates on unmounted component
+          if (!isMountedRef.current) return
+
           const newGuest = payload.new as any
           const oldGuest = payload.old as any
 
@@ -177,7 +183,13 @@ export function UsherStatistics() {
 
     // Cleanup subscription on unmount or when selectedEventId changes
     return () => {
-      supabaseClient.current.removeChannel(channel)
+      isMountedRef.current = false
+      console.debug("🧹 Cleaning up usher statistics subscription")
+      try {
+        supabaseClient.current.removeChannel(channel)
+      } catch (error) {
+        console.debug("Error during usher statistics cleanup:", error)
+      }
     }
   }, [selectedEventId])
 

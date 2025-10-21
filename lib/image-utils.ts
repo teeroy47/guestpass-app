@@ -105,15 +105,24 @@ export async function compressImage(
  */
 export async function captureFromVideo(
   videoElement: HTMLVideoElement,
-  options: CompressImageOptions = {}
+  options: CompressImageOptions & { circular?: boolean } = {}
 ): Promise<Blob> {
-  const { quality = 0.85, format = "jpeg" } = options
+  const { quality = 0.85, format = "jpeg", circular = true } = options
 
   return new Promise((resolve, reject) => {
     try {
+      const videoWidth = videoElement.videoWidth
+      const videoHeight = videoElement.videoHeight
+      
+      // Calculate the size of the circular crop area
+      // Use the smaller dimension to ensure the circle fits
+      const size = Math.min(videoWidth, videoHeight)
+      const radius = size / 2
+      
+      // Create canvas with square dimensions for circular crop
       const canvas = document.createElement("canvas")
-      canvas.width = videoElement.videoWidth
-      canvas.height = videoElement.videoHeight
+      canvas.width = size
+      canvas.height = size
 
       const ctx = canvas.getContext("2d")
       if (!ctx) {
@@ -121,8 +130,24 @@ export async function captureFromVideo(
         return
       }
 
-      // Draw current video frame
-      ctx.drawImage(videoElement, 0, 0)
+      if (circular) {
+        // Create circular clipping path
+        ctx.beginPath()
+        ctx.arc(radius, radius, radius, 0, Math.PI * 2)
+        ctx.closePath()
+        ctx.clip()
+      }
+
+      // Calculate source position to center the crop
+      const sx = (videoWidth - size) / 2
+      const sy = (videoHeight - size) / 2
+
+      // Draw the video frame centered and cropped to circle
+      ctx.drawImage(
+        videoElement,
+        sx, sy, size, size,  // Source rectangle (centered)
+        0, 0, size, size     // Destination rectangle (full canvas)
+      )
 
       // Convert to blob
       canvas.toBlob(

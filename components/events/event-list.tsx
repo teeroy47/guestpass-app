@@ -11,7 +11,7 @@ import { useEvents } from "@/lib/events-context"
 import { useAuth } from "@/lib/auth-context"
 import { CreateEventDialog } from "./create-event-dialog"
 import { EventDetailsDialog } from "./event-details-dialog"
-import { Camera, Calendar, MapPin, Users, Plus, Search, MoreHorizontal, Mail, Trash2, X } from "lucide-react"
+import { Camera, Calendar, MapPin, Users, Plus, Search, MoreHorizontal, Mail, Trash2, X, CheckSquare } from "lucide-react"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { QRScanner } from "@/components/scanner/qr-scanner"
 import { useToast } from "@/components/ui/use-toast"
@@ -48,6 +48,7 @@ const EventCard = ({
   isSelected,
   onToggleSelect,
   selectionMode,
+  isAdmin,
 }: {
   event: any
   onEdit: (event: any) => void
@@ -56,9 +57,10 @@ const EventCard = ({
   isSelected: boolean
   onToggleSelect: (id: string) => void
   selectionMode: boolean
+  isAdmin: boolean
 }) => {
   const handleCardClick = () => {
-    if (selectionMode && event.isAdmin) {
+    if (selectionMode && isAdmin) {
       onToggleSelect(event.id)
     } else if (!selectionMode) {
       onEdit(event)
@@ -73,7 +75,7 @@ const EventCard = ({
       <CardHeader className="pb-3">
         <div className="flex items-start justify-between">
           <div className="flex items-start gap-3 flex-1">
-            {selectionMode && event.isAdmin && (
+            {selectionMode && isAdmin && (
               <Checkbox
                 checked={isSelected}
                 onCheckedChange={() => onToggleSelect(event.id)}
@@ -88,7 +90,7 @@ const EventCard = ({
               </Badge>
             </div>
           </div>
-          {event.isAdmin && !selectionMode && (
+          {isAdmin && !selectionMode && (
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button variant="ghost" size="sm" onClick={(e) => e.stopPropagation()}>
@@ -149,7 +151,7 @@ const EventCard = ({
         )}
 
         <div className="flex gap-2 mt-4">
-          {event.isAdmin && (
+          {isAdmin && (
             <Button
               variant="outline"
               size="sm"
@@ -180,7 +182,11 @@ const EventCard = ({
   )
 }
 
-export function EventList() {
+interface EventListProps {
+  onNavigateToGuests?: () => void
+}
+
+export function EventList({ onNavigateToGuests }: EventListProps = {}) {
   const { events, loading, deleteEvent, updateEvent } = useEvents()
   const { user } = useAuth()
   const { toast } = useToast()
@@ -293,19 +299,18 @@ export function EventList() {
 
   const handleOpenGuestManager = () => {
     if (!events.length) {
-      setShowCreateDialog(true)
+      toast({
+        title: "No events found",
+        description: "Please create an event first before managing guests.",
+        variant: "destructive",
+      })
       return
     }
 
-    const targetEventId = selectedEvent ?? events[0]?.id
-    if (!targetEventId) {
-      setShowCreateDialog(true)
-      return
+    // Navigate to Guests tab
+    if (onNavigateToGuests) {
+      onNavigateToGuests()
     }
-
-    setSelectedEvent(targetEventId)
-    setEditingEvent({ id: targetEventId })
-    setShowDetailsDialog(true)
   }
 
   const handleOpenCreateDialog = () => {
@@ -351,18 +356,10 @@ export function EventList() {
                 </Button>
                 <Button 
                   variant="outline" 
-                  onClick={() => setShowInviteBuilder(true)}
-                  className="w-full sm:w-auto bg-card hover:bg-accent"
-                >
-                  <Mail className="mr-2 h-4 w-4" />
-                  <span>Create Invite</span>
-                </Button>
-                <Button 
-                  variant="outline" 
                   onClick={() => setSelectionMode(true)}
                   className="w-full sm:w-auto bg-card hover:bg-accent"
                 >
-                  <Checkbox className="mr-2 h-4 w-4" />
+                  <CheckSquare className="mr-2 h-4 w-4" />
                   <span>Bulk Actions</span>
                 </Button>
               </>
@@ -478,6 +475,7 @@ export function EventList() {
               isSelected={selectedEventIds.includes(event.id)}
               onToggleSelect={toggleSelectEvent}
               selectionMode={selectionMode}
+              isAdmin={isAdmin}
             />
           ))}
         </div>

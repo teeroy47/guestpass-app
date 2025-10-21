@@ -4,7 +4,7 @@ import { useState, useRef, useEffect, useCallback } from "react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
-import { Camera, Flashlight, FlashlightOff, X, CheckCircle, AlertCircle, Clock } from "lucide-react"
+import { Camera, Flashlight, FlashlightOff, X, CheckCircle, AlertCircle, Clock, Pause, Play } from "lucide-react"
 import { Html5Qrcode } from "html5-qrcode"
 import { useGuests } from "@/lib/guests-context"
 import { useEvents } from "@/lib/events-context"
@@ -12,8 +12,20 @@ import { useAuth } from "@/lib/auth-context"
 import { soundEffects } from "@/lib/sound-effects"
 import { PhotoCaptureDialog } from "./photo-capture-dialog"
 import { DuplicateCheckinModal } from "./duplicate-checkin-modal"
+import { CheckInSummaryDialog } from "./checkin-summary-dialog"
 import { SupabaseGuestService } from "@/lib/supabase/guest-service"
+import { ScannerSessionService } from "@/lib/supabase/scanner-session-service"
 import { compressImage } from "@/lib/image-utils"
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog"
 
 interface QRScannerProps {
   eventId: string
@@ -35,6 +47,7 @@ export function QRScanner({ eventId, onClose }: QRScannerProps) {
   const [cameraId, setCameraId] = useState<string | null>(null)
   const [showPhotoCapture, setShowPhotoCapture] = useState(false)
   const [showDuplicateModal, setShowDuplicateModal] = useState(false)
+  const [showSummary, setShowSummary] = useState(false)
   const [currentStep, setCurrentStep] = useState<1 | 2>(1) // Track current step
   const [pendingCheckIn, setPendingCheckIn] = useState<{
     uniqueCode: string
@@ -42,11 +55,19 @@ export function QRScanner({ eventId, onClose }: QRScannerProps) {
     guestId: string
   } | null>(null)
   const [duplicateGuest, setDuplicateGuest] = useState<any>(null)
+  const [checkedInGuest, setCheckedInGuest] = useState<any>(null)
+  const [isPaused, setIsPaused] = useState(false)
+  const [showAllCheckedInDialog, setShowAllCheckedInDialog] = useState(false)
+  const [inactivityWarning, setInactivityWarning] = useState(false)
+  const [scannerSessionId, setScannerSessionId] = useState<string | null>(null)
   
   const html5QrCodeRef = useRef<Html5Qrcode | null>(null)
   const scannerDivId = "qr-reader"
   const isProcessingRef = useRef(false)
   const streamRef = useRef<MediaStream | null>(null)
+  const isMountedRef = useRef(true)
+  const inactivityTimerRef = useRef<NodeJS.Timeout | null>(null)
+  const lastActivityRef = useRef<number>(Date.now())
   
   // Performance optimization: Create a Map for O(1) guest lookup by unique code
   const guestLookupRef = useRef<Map<string, any>>(new Map())
@@ -58,6 +79,7 @@ export function QRScanner({ eventId, onClose }: QRScannerProps) {
   const event = events.find((e) => e.id === eventId)
   const eventGuests = guests.filter((g) => g.eventId === eventId)
   const checkedInCount = eventGuests.filter((g) => g.checkedIn).length
+  const allGuestsCheckedIn = eventGuests.length > 0 && checkedInCount === eventGuests.length
   
   // Build guest lookup map for fast scanning (O(1) instead of O(n))
   useEffect(() => {
@@ -68,9 +90,66 @@ export function QRScanner({ eventId, onClose }: QRScannerProps) {
     guestLookupRef.current = lookupMap
   }, [eventGuests])
 
+  // Reset inactivity timer on any scan activity
+  const resetInactivityTimer = useCallback(() => {
+    lastActivityRef.current = Date.now()
+    setInactivityWarning(false)
+    
+    // Clear existing timer
+    if (inactivityTimerRef.current) {
+      clearTimeout(inactivityTimerRef.current)
+    }
+    
+    // Show warning at 4 minutes (240000ms)
+    const warningTimer = setTimeout(() => {
+      if (isMountedRef.current && isScanning && !isPaused) {
+        setInactivityWarning(true)
+      }
+    }, 240000) // 4 minutes
+    
+    // Auto-pause at 5 minutes (300000ms)
+    inactivityTimerRef.current = setTimeout(() => {
+      if (isMountedRef.current && isScanning && !isPaused) {
+        console.log("⏸️ Auto-pausing scanner due to 5 minutes of inactivity")
+        stopScanning()
+        setIsPaused(true)
+        setInactivityWarning(false)
+        setScannerError("Scanner paused due to inactivity")
+        setTimeout(() => setScannerError(null), 3000)
+      }
+    }, 300000) // 5 minutes
+    
+    return () => clearTimeout(warningTimer)
+  }, [isScanning, isPaused])
+
+  // Start inactivity timer when scanning starts
+  useEffect(() => {
+    if (isScanning && !isPaused) {
+      resetInactivityTimer()
+    }
+    
+    return () => {
+      if (inactivityTimerRef.current) {
+        clearTimeout(inactivityTimerRef.current)
+      }
+    }
+  }, [isScanning, isPaused, resetInactivityTimer])
+
   const resetScannerState = useCallback(() => {
+    if (!isMountedRef.current) return
     setLastScanResult(null)
     setScannerError(null)
+  }, [])
+
+  const handleNextGuest = useCallback(() => {
+    if (!isMountedRef.current) return
+    // Reset all states for next guest
+    setShowSummary(false)
+    setCheckedInGuest(null)
+    setPendingCheckIn(null)
+    setLastScanResult(null)
+    setCurrentStep(1)
+    isProcessingRef.current = false
   }, [])
 
   const handlePhotoSkip = useCallback(
@@ -92,19 +171,15 @@ export function QRScanner({ eventId, onClose }: QRScannerProps) {
 
         if (result.status === "ok") {
           soundEffects.playSuccessTone()
-          setLastScanResult({
-            type: "success",
-            message: `Check-in completed (no photo). Ready for next guest.`,
-            guest: result.guest,
-            timestamp: new Date().toLocaleTimeString("en-US", { hour12: false }),
-          })
-
-          // Reset to Step 1 after 2 seconds
-          setTimeout(() => {
-            isProcessingRef.current = false
-            setLastScanResult(null)
-            setCurrentStep(1)
-          }, 2000)
+          
+          // Store checked-in guest for summary
+          setCheckedInGuest(result.guest)
+          
+          // Show summary dialog
+          setShowSummary(true)
+          
+          // Clear last scan result
+          setLastScanResult(null)
         }
 
         // Refresh guests to get updated data
@@ -187,19 +262,15 @@ export function QRScanner({ eventId, onClose }: QRScannerProps) {
 
         if (result.status === "ok") {
           soundEffects.playSuccessTone()
-          setLastScanResult({
-            type: "success",
-            message: `Photo uploaded successfully! Ready for next guest.`,
-            guest: result.guest,
-            timestamp: new Date().toLocaleTimeString("en-US", { hour12: false }),
-          })
-
-          // Reset to Step 1 after 2 seconds
-          setTimeout(() => {
-            isProcessingRef.current = false
-            setLastScanResult(null)
-            setCurrentStep(1)
-          }, 2000)
+          
+          // Store checked-in guest for summary
+          setCheckedInGuest(result.guest)
+          
+          // Show summary dialog
+          setShowSummary(true)
+          
+          // Clear last scan result
+          setLastScanResult(null)
         }
 
         // Refresh guests to get updated data
@@ -231,6 +302,9 @@ export function QRScanner({ eventId, onClose }: QRScannerProps) {
       }
 
       isProcessingRef.current = true
+      
+      // Reset inactivity timer on successful scan
+      resetInactivityTimer()
 
       try {
         const [scannedEventId, uniqueCode] = decodedText.split(":")
@@ -281,6 +355,25 @@ export function QRScanner({ eventId, onClose }: QRScannerProps) {
           timestamp: new Date().toLocaleTimeString("en-US", { hour12: false }),
         })
 
+        // Increment scanner session scan count
+        console.log("🔍 [QR Scanner] About to increment scan count", {
+          scannerSessionId,
+          hasScannerSessionId: !!scannerSessionId,
+          timestamp: new Date().toISOString()
+        })
+        
+        if (scannerSessionId) {
+          try {
+            console.log("🔍 [QR Scanner] Calling incrementScanCount with ID:", scannerSessionId)
+            await ScannerSessionService.incrementScanCount(scannerSessionId)
+            console.log("✅ [QR Scanner] Successfully incremented scan count")
+          } catch (error) {
+            console.error("❌ [QR Scanner] Failed to increment scan count:", error)
+          }
+        } else {
+          console.warn("⚠️ [QR Scanner] No scannerSessionId available - cannot increment scan count")
+        }
+
         // Store pending check-in data
         setPendingCheckIn({
           uniqueCode,
@@ -306,7 +399,7 @@ export function QRScanner({ eventId, onClose }: QRScannerProps) {
         }, 1500)
       }
     },
-    [eventId, displayName, user]
+    [eventId, displayName, user, resetInactivityTimer, scannerSessionId]
   )
 
   const stopScanning = useCallback(async () => {
@@ -321,17 +414,57 @@ export function QRScanner({ eventId, onClose }: QRScannerProps) {
         streamRef.current = null
       }
       
-      setIsScanning(false)
-      setTorchEnabled(false)
+      // End scanner session tracking
+      if (scannerSessionId) {
+        try {
+          await ScannerSessionService.endSession(scannerSessionId)
+          console.log("📊 Scanner session ended:", scannerSessionId)
+          setScannerSessionId(null)
+        } catch (error) {
+          console.error("Failed to end scanner session:", error)
+        }
+      }
+      
+      // Only update state if still mounted
+      if (isMountedRef.current) {
+        setIsScanning(false)
+        setTorchEnabled(false)
+      }
       isProcessingRef.current = false
     } catch (error) {
       console.error("Error stopping scanner:", error)
     }
-  }, [])
+  }, [scannerSessionId])
 
   const startScanning = useCallback(async () => {
+    // Check if all guests are already checked in
+    if (allGuestsCheckedIn) {
+      setShowAllCheckedInDialog(true)
+      return
+    }
+    
     resetScannerState()
     setScannerError(null)
+    setIsPaused(false)
+    
+    // Start scanner session tracking
+    try {
+      const usherName = displayName || user?.email || "Unknown Usher"
+      const usherEmail = user?.email || ""
+      console.log("🔍 [QR Scanner] Starting scanner session for:", { usherName, usherEmail, eventId })
+      
+      const session = await ScannerSessionService.startSession({
+        eventId,
+        usherName,
+        usherEmail,
+      })
+      
+      setScannerSessionId(session.id)
+      console.log("✅ [QR Scanner] Scanner session started successfully:", session.id)
+    } catch (error) {
+      console.error("❌ [QR Scanner] Failed to start scanner session:", error)
+      // Continue anyway - session tracking is not critical
+    }
     
     // First, set scanning state to true so the div renders
     setIsScanning(true)
@@ -376,6 +509,15 @@ export function QRScanner({ eventId, onClose }: QRScannerProps) {
           qrbox: { width: 250, height: 250 }, // Scanning box size
           aspectRatio: 1.0,
           disableFlip: false, // Allow flipped QR codes
+          // Advanced camera constraints for better performance
+          videoConstraints: {
+            facingMode: "environment", // Prefer rear camera
+            focusMode: "continuous", // Enable continuous autofocus
+            advanced: [
+              { focusMode: "continuous" },
+              { focusDistance: 0 } // Auto focus
+            ]
+          }
         },
         (decodedText) => {
           handleSuccessfulScan(decodedText)
@@ -389,10 +531,29 @@ export function QRScanner({ eventId, onClose }: QRScannerProps) {
         }
       )
 
-      // Get the video stream for torch control
+      // Get the video stream for torch control and apply autofocus
       const videoElement = document.querySelector(`#${scannerDivId} video`) as HTMLVideoElement
       if (videoElement && videoElement.srcObject) {
         streamRef.current = videoElement.srcObject as MediaStream
+        
+        // Try to enable autofocus on the video track if supported
+        const videoTrack = streamRef.current.getVideoTracks()[0]
+        if (videoTrack) {
+          try {
+            const capabilities = videoTrack.getCapabilities() as any
+            
+            // Apply autofocus if supported
+            if (capabilities.focusMode && capabilities.focusMode.includes('continuous')) {
+              await videoTrack.applyConstraints({
+                advanced: [{ focusMode: 'continuous' } as any]
+              })
+              console.log('✓ Continuous autofocus enabled')
+            }
+          } catch (error) {
+            // Autofocus not supported on this device - continue without it
+            console.log('Autofocus not available on this device')
+          }
+        }
       }
     } catch (error) {
       console.error("Camera access error:", error)
@@ -407,7 +568,7 @@ export function QRScanner({ eventId, onClose }: QRScannerProps) {
       // Reset scanning state on error
       setIsScanning(false)
     }
-  }, [resetScannerState, handleSuccessfulScan])
+  }, [resetScannerState, handleSuccessfulScan, allGuestsCheckedIn])
 
   const toggleTorch = useCallback(async () => {
     if (!streamRef.current) {
@@ -446,21 +607,57 @@ export function QRScanner({ eventId, onClose }: QRScannerProps) {
 
   // Cleanup on unmount
   useEffect(() => {
+    isMountedRef.current = true
+    
     return () => {
-      // Cleanup function
+      // Mark as unmounted to prevent state updates
+      isMountedRef.current = false
+      
+      // Cleanup function - run synchronously to avoid race conditions
       const cleanup = async () => {
         try {
-          await stopScanning()
+          // End scanner session if active
+          if (scannerSessionId) {
+            try {
+              await ScannerSessionService.endSession(scannerSessionId)
+              console.log("📊 Scanner session ended on unmount:", scannerSessionId)
+            } catch (error) {
+              console.error("Failed to end scanner session on unmount:", error)
+            }
+          }
           
-          // Only clear if scanner exists and has the clear method
+          // Stop scanner if it's running
+          if (html5QrCodeRef.current && html5QrCodeRef.current.isScanning) {
+            try {
+              await html5QrCodeRef.current.stop()
+            } catch (error) {
+              console.debug("Scanner stop error:", error)
+            }
+          }
+          
+          // Stop all media tracks
+          if (streamRef.current) {
+            streamRef.current.getTracks().forEach(track => {
+              try {
+                track.stop()
+              } catch (error) {
+                console.debug("Track stop error:", error)
+              }
+            })
+            streamRef.current = null
+          }
+          
+          // Clear scanner instance
           if (html5QrCodeRef.current && typeof html5QrCodeRef.current.clear === 'function') {
             try {
               await html5QrCodeRef.current.clear()
             } catch (error) {
               // Silently handle clear errors during unmount
-              console.debug("Scanner cleanup:", error)
+              console.debug("Scanner clear error:", error)
             }
           }
+          
+          html5QrCodeRef.current = null
         } catch (error) {
           console.debug("Cleanup error:", error)
         }
@@ -468,7 +665,7 @@ export function QRScanner({ eventId, onClose }: QRScannerProps) {
       
       cleanup()
     }
-  }, [stopScanning])
+  }, [])
 
   return (
     <>
@@ -477,10 +674,16 @@ export function QRScanner({ eventId, onClose }: QRScannerProps) {
           width: 100% !important;
           height: 100% !important;
           object-fit: cover !important;
-          border-radius: 1rem;
+          border-radius: 1.5rem;
         }
         #${scannerDivId} {
-          box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.7);
+          border-radius: 1.5rem;
+          box-shadow: 
+            0 0 0 9999px rgba(0, 0, 0, 0.85),
+            0 0 40px rgba(139, 92, 246, 0.6),
+            0 0 80px rgba(139, 92, 246, 0.4),
+            0 0 120px rgba(139, 92, 246, 0.2);
+          overflow: hidden;
         }
       `}</style>
       <div className="fixed inset-0 bg-gradient-to-b from-gray-900 to-black z-50 flex flex-col safe-area-inset">
@@ -521,22 +724,11 @@ export function QRScanner({ eventId, onClose }: QRScannerProps) {
               }}
             />
 
-            {/* Scanning Guide Overlay */}
+            {/* Scanning Guide Overlay - Instruction Only */}
             <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-10">
               <div className="relative">
-                <div className="w-64 h-64 border-2 border-white/50 rounded-2xl relative bg-transparent">
-                  {/* Corner decorations */}
-                  <div className="absolute -top-1 -left-1 w-8 h-8 border-t-4 border-l-4 border-primary rounded-tl-2xl"></div>
-                  <div className="absolute -top-1 -right-1 w-8 h-8 border-t-4 border-r-4 border-primary rounded-tr-2xl"></div>
-                  <div className="absolute -bottom-1 -left-1 w-8 h-8 border-b-4 border-l-4 border-primary rounded-bl-2xl"></div>
-                  <div className="absolute -bottom-1 -right-1 w-8 h-8 border-b-4 border-r-4 border-primary rounded-br-2xl"></div>
-                  
-                  {/* Scanning line animation */}
-                  <div className="absolute inset-0 overflow-hidden rounded-2xl">
-                    <div className="absolute w-full h-1 bg-gradient-to-r from-transparent via-primary to-transparent animate-scan-line"></div>
-                  </div>
-                </div>
-                <p className="text-white text-center mt-4 text-sm font-medium drop-shadow-lg">
+                <div className="w-64 h-64"></div>
+                <p className="text-white text-center mt-6 text-sm font-semibold drop-shadow-lg bg-black/60 backdrop-blur-md px-6 py-2.5 rounded-full border border-white/20">
                   Position QR code within frame
                 </p>
               </div>
@@ -563,6 +755,14 @@ export function QRScanner({ eventId, onClose }: QRScannerProps) {
                 <span>Pause</span>
               </Button>
             </div>
+
+            {/* Inactivity Warning */}
+            {inactivityWarning && !scannerError && (
+              <div className="absolute top-20 left-1/2 transform -translate-x-1/2 max-w-[90%] bg-amber-500/90 backdrop-blur-sm text-white px-4 py-3 rounded-lg shadow-lg flex items-center gap-2 pointer-events-auto z-20 animate-pulse">
+                <Clock className="h-5 w-5 shrink-0" />
+                <span className="text-sm font-medium">Scanner will pause in 1 minute due to inactivity</span>
+              </div>
+            )}
 
             {/* Error Message */}
             {scannerError && (
@@ -628,12 +828,17 @@ export function QRScanner({ eventId, onClose }: QRScannerProps) {
         ) : (
           <div className="h-full flex flex-col items-center justify-center gap-6 text-center text-white px-6">
             <div className="w-20 h-20 rounded-full bg-primary/20 flex items-center justify-center">
-              <Camera className="h-10 w-10 text-primary" />
+              {isPaused ? <Pause className="h-10 w-10 text-amber-400" /> : <Camera className="h-10 w-10 text-primary" />}
             </div>
             <div className="space-y-2">
-              <h3 className="text-xl font-semibold text-white">Ready to Scan</h3>
+              <h3 className="text-xl font-semibold text-white">
+                {isPaused ? "Scanner Paused" : "Ready to Scan"}
+              </h3>
               <p className="text-sm text-white/70 leading-relaxed max-w-md">
-                Grant camera permissions and press start to begin scanning guest passes.
+                {isPaused 
+                  ? "Camera paused due to inactivity. Press resume when ready to continue scanning."
+                  : "Grant camera permissions and press start to begin scanning guest passes."
+                }
               </p>
             </div>
             <Button 
@@ -641,8 +846,17 @@ export function QRScanner({ eventId, onClose }: QRScannerProps) {
               onClick={startScanning} 
               className="bg-primary text-primary-foreground hover:bg-primary/90 shadow-lg"
             >
-              <Camera className="mr-2 h-5 w-5" />
-              <span>Start Scanning</span>
+              {isPaused ? (
+                <>
+                  <Play className="mr-2 h-5 w-5" />
+                  <span>Resume Scanning</span>
+                </>
+              ) : (
+                <>
+                  <Camera className="mr-2 h-5 w-5" />
+                  <span>Start Scanning</span>
+                </>
+              )}
             </Button>
             {scannerError && (
               <div className="flex items-center justify-center gap-2 text-red-400 text-sm bg-red-500/10 px-4 py-2 rounded-lg border border-red-500/20">
@@ -736,6 +950,110 @@ export function QRScanner({ eventId, onClose }: QRScannerProps) {
           guest={duplicateGuest}
         />
       )}
+
+      {/* Check-In Summary Dialog */}
+      {showSummary && checkedInGuest && (
+        <CheckInSummaryDialog
+          open={showSummary}
+          onClose={() => setShowSummary(false)}
+          onNextGuest={handleNextGuest}
+          guest={checkedInGuest}
+        />
+      )}
+
+      {/* All Guests Checked In Dialog */}
+      <AlertDialog open={showAllCheckedInDialog} onOpenChange={setShowAllCheckedInDialog}>
+        <AlertDialogContent className="bg-card border-border">
+          <AlertDialogHeader>
+            <AlertDialogTitle className="flex items-center gap-2">
+              <CheckCircle className="h-5 w-5 text-green-500" />
+              All Guests Checked In
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              All {eventGuests.length} guests for this event have already been checked in. 
+              {" "}Do you want to continue scanning anyway?
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={() => {
+              setShowAllCheckedInDialog(false)
+              onClose()
+            }}>
+              Close Scanner
+            </AlertDialogCancel>
+            <AlertDialogAction onClick={() => {
+              setShowAllCheckedInDialog(false)
+              // Force start scanning even though all are checked in
+              resetScannerState()
+              setScannerError(null)
+              setIsPaused(false)
+              setIsScanning(true)
+              
+              // Continue with normal scanning flow
+              setTimeout(async () => {
+                const scannerElement = document.getElementById(scannerDivId)
+                if (!scannerElement) return
+                
+                if (!html5QrCodeRef.current) {
+                  html5QrCodeRef.current = new Html5Qrcode(scannerDivId)
+                }
+                
+                try {
+                  const devices = await Html5Qrcode.getCameras()
+                  if (!devices || devices.length === 0) {
+                    throw new Error("No cameras found on this device")
+                  }
+                  
+                  const rearCamera = devices.find(device => 
+                    device.label.toLowerCase().includes('back') || 
+                    device.label.toLowerCase().includes('rear') ||
+                    device.label.toLowerCase().includes('environment')
+                  )
+                  
+                  const selectedCameraId = rearCamera?.id || devices[0].id
+                  setCameraId(selectedCameraId)
+                  
+                  await html5QrCodeRef.current.start(
+                    selectedCameraId,
+                    {
+                      fps: 30,
+                      qrbox: { width: 250, height: 250 },
+                      aspectRatio: 1.0,
+                      disableFlip: false,
+                      videoConstraints: {
+                        facingMode: "environment",
+                        focusMode: "continuous",
+                        advanced: [
+                          { focusMode: "continuous" },
+                          { focusDistance: 0 }
+                        ]
+                      }
+                    },
+                    (decodedText) => {
+                      handleSuccessfulScan(decodedText)
+                    },
+                    (errorMessage) => {
+                      // Silent scanning
+                    }
+                  )
+                  
+                  const videoElement = document.querySelector(`#${scannerDivId} video`) as HTMLVideoElement
+                  if (videoElement && videoElement.srcObject) {
+                    streamRef.current = videoElement.srcObject as MediaStream
+                  }
+                } catch (error) {
+                  console.error("Camera access error:", error)
+                  const message = error instanceof Error ? error.message : "Unable to access camera"
+                  setScannerError(message)
+                  setIsScanning(false)
+                }
+              }, 100)
+            }}>
+              Continue Scanning
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
     </>
   )

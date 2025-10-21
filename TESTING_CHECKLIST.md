@@ -1,217 +1,305 @@
-# Testing Checklist for UX Improvements
+# Testing Checklist
 
-## Quick Test Guide
+## ✅ Pre-Deployment Testing
 
-### 🔄 1. Loading States
-- [ ] Navigate to dashboard
-- [ ] Refresh the page (F5)
-- [ ] **Expected**: See spinning loader with "Loading dashboard data..." message
-- [ ] **Expected**: Dashboard stats appear after loading completes
-
----
-
-### 🎨 2. Color-Coded Progress Bars
-
-#### Test Low Attendance (Red)
-- [ ] Go to Events tab
-- [ ] Find an event with < 30% attendance
-- [ ] **Expected**: Progress bar is **RED**
-
-#### Test Medium Attendance (Yellow)
-- [ ] Find an event with 30-70% attendance
-- [ ] **Expected**: Progress bar is **YELLOW**
-
-#### Test High Attendance (Green)
-- [ ] Find an event with > 70% attendance
-- [ ] **Expected**: Progress bar is **GREEN**
-
-#### Test Smooth Transitions
-- [ ] Check in a guest for an event
-- [ ] Watch the progress bar
-- [ ] **Expected**: Bar smoothly animates to new width and color changes if threshold crossed
+### 🔧 Setup
+- [ ] Open application in 2 browsers/devices (Device A and Device B)
+- [ ] Device A: Login as Admin
+- [ ] Device B: Login as Usher
+- [ ] Ensure at least 1 active event with guests exists
 
 ---
 
-### 📷 3. Instant Scanner Access
+## Test 1: ⏰ Timestamp Accuracy
 
-#### From Event Card
-- [ ] Go to Events tab
-- [ ] Click the **"Scan"** button on any event card
-- [ ] **Expected**: QR scanner opens immediately for that event
-- [ ] **Expected**: Event name shows in scanner header
-- [ ] **Expected**: Guest count shows correctly
+### Steps:
+1. [ ] Device A: Go to Overview tab
+2. [ ] Device B: Scan a guest QR code
+3. [ ] Device A: Check "Recent Check-ins" section
 
-#### Close and Reopen
-- [ ] Close the scanner (X button)
-- [ ] Click scan on a **different** event
-- [ ] **Expected**: Scanner opens with the new event selected
+### Expected Results:
+- [ ] Timestamp shows "Xs ago" (e.g., "3s ago", "5s ago")
+- [ ] NOT "0m ago" or "1 day ago"
+- [ ] Timestamp updates every second
+- [ ] After 60 seconds, shows "1m ago"
+- [ ] After 60 minutes, shows "1h ago"
 
----
-
-### ⏰ 4. Automatic Event Completion
-
-#### Setup Test Event
-- [ ] Create a test event with a date **more than 24 hours ago**
-- [ ] Set status to "active"
-- [ ] Save the event
-
-#### Test Auto-Completion
-- [ ] Refresh the page or navigate away and back
-- [ ] Check the event status
-- [ ] **Expected**: Status automatically changes to "completed"
-- [ ] **Expected**: Badge shows "completed" instead of "active"
+### Pass Criteria:
+✅ All timestamps are accurate and update in real-time
 
 ---
 
-### 🔊 5. Audio Feedback for Scans
+## Test 2: 🧭 Manage Guests Navigation
 
-#### Test Success Sound
-- [ ] Open scanner for an event
-- [ ] Scan a valid QR code for a guest who hasn't checked in
-- [ ] **Expected**: Hear two ascending tones (pleasant, like Face ID)
-- [ ] **Expected**: Green success message appears
-- [ ] **Expected**: Guest name shows in success message
+### Steps:
+1. [ ] Go to Events tab
+2. [ ] Click "Manage Guests" button
 
-#### Test Duplicate Sound
-- [ ] Scan the **same QR code again** (already checked in)
-- [ ] **Expected**: Hear two identical warning tones (more attention-grabbing)
-- [ ] **Expected**: Yellow/orange duplicate message appears
-- [ ] **Expected**: Message says "already checked in"
+### Expected Results:
+- [ ] Immediately navigates to Guests tab
+- [ ] NO dialog opens
+- [ ] Can select event from dropdown
+- [ ] Guest list displays correctly
 
-#### Test Error Sound
-- [ ] Scan a QR code for a **different event**
-- [ ] **Expected**: Hear three descending tones (error sound)
-- [ ] **Expected**: Red error message appears
-- [ ] **Expected**: Message says "QR code is for a different event"
+### Edge Case:
+1. [ ] Delete all events
+2. [ ] Click "Manage Guests"
+3. [ ] Should show toast: "No events found"
 
-#### Test Without Looking
-- [ ] Start scanner
-- [ ] Turn your head away from screen
-- [ ] Scan multiple QR codes (mix of new, duplicate, and wrong event)
-- [ ] **Expected**: Can distinguish success/duplicate/error by sound alone
+### Pass Criteria:
+✅ Navigation is direct and intuitive
 
 ---
 
-## Browser Testing
+## Test 3: 🔄 No Page Reload
 
-### Desktop Browsers
-- [ ] Chrome/Edge - All features work
-- [ ] Firefox - All features work
-- [ ] Safari - All features work
+### Steps:
+1. [ ] Device A: Go to Overview tab
+2. [ ] Device A: Scroll down to "Usher Statistics" section
+3. [ ] Note current scroll position
+4. [ ] Device B: Scan a guest QR code
+5. [ ] Device A: Observe behavior
 
-### Mobile Browsers
-- [ ] iOS Safari - Audio works, scanner works
-- [ ] Chrome Mobile - Audio works, scanner works
+### Expected Results:
+- [ ] Stats update (Total Guests, Checked In numbers change)
+- [ ] Toast notification appears: "✅ Guest Checked In"
+- [ ] Progress bars animate smoothly
+- [ ] Recent check-ins list updates
+- [ ] **NO loading spinner appears**
+- [ ] **Scroll position stays the same**
+- [ ] **NO page flicker or reload**
+- [ ] Update happens in <500ms
 
----
-
-## Edge Cases to Test
-
-### Loading States
-- [ ] Slow network: Loading spinner shows for longer
-- [ ] No events: Dashboard shows "No events yet"
-- [ ] No guests: Stats show 0 correctly
-
-### Progress Bars
-- [ ] Event with 0 guests: No progress bar shown
-- [ ] Event with 0% attendance: Red bar at 0%
-- [ ] Event with 100% attendance: Green bar at 100%
-
-### Scanner
-- [ ] Scan with camera permission denied: Error message shows
-- [ ] Scan invalid QR code: Error sound and message
-- [ ] Scan very quickly: Sounds don't overlap/glitch
-
-### Auto-Completion
-- [ ] Event exactly 24 hours old: Should complete
-- [ ] Event 23 hours old: Should stay active
-- [ ] Draft event past date: Should stay draft (not auto-complete)
+### Pass Criteria:
+✅ Smooth update without any loading state or scroll reset
 
 ---
 
-## Performance Checks
+## Test 4: 📊 Stats Update Correctly
 
-- [ ] Loading spinner appears within 100ms
-- [ ] Progress bar animations are smooth (no jank)
-- [ ] Scanner opens in < 1 second
-- [ ] Audio plays immediately (< 50ms delay)
-- [ ] Page doesn't freeze during auto-completion checks
+### Steps:
+1. [ ] Device A: Note current stats (Total Guests, Checked In)
+2. [ ] Device B: Check in 3 guests
+3. [ ] Device A: Verify stats update
 
----
+### Expected Results:
+- [ ] Total Guests count stays same (or increases if new guest added)
+- [ ] Checked In count increases by 3
+- [ ] Attendance percentage updates correctly
+- [ ] Progress bars animate to new values
+- [ ] Active Scanners count updates if within 5 minutes
 
-## Accessibility Checks
-
-- [ ] Loading spinner text is readable
-- [ ] Progress bar percentages are visible
-- [ ] Scanner can be closed with keyboard (Esc key)
-- [ ] Audio volume is appropriate (not too loud)
-- [ ] Color-blind users can still read percentages
-
----
-
-## Known Limitations
-
-1. **Audio on iOS**: May require user interaction before first sound plays
-2. **Auto-completion**: Only runs when events are fetched (on page load/refresh)
-3. **Progress bars**: Colors are fixed (not customizable by admins yet)
+### Pass Criteria:
+✅ All stats are accurate and update in real-time
 
 ---
 
-## Troubleshooting
+## Test 5: 🎯 Multi-User Real-Time
 
-### Audio Not Playing
+### Steps:
+1. [ ] Open dashboard on 3 devices (A, B, C)
+2. [ ] Device A: Stay on Overview tab
+3. [ ] Device B: Scan guest 1
+4. [ ] Wait 5 seconds
+5. [ ] Device C: Scan guest 2
+6. [ ] Device A: Check recent check-ins
+
+### Expected Results:
+- [ ] Both check-ins appear on Device A
+- [ ] Timestamps are different (5 seconds apart)
+- [ ] Both show accurate "Xs ago" timestamps
+- [ ] Toast notifications appear for both
+- [ ] Stats update correctly (2 new check-ins)
+
+### Pass Criteria:
+✅ All devices stay in sync with accurate timestamps
+
+---
+
+## Test 6: 🔄 Add New Guest
+
+### Steps:
+1. [ ] Device A: Go to Overview tab, scroll down
+2. [ ] Device B: Go to Guests tab
+3. [ ] Device B: Add a new guest
+4. [ ] Device A: Observe behavior
+
+### Expected Results:
+- [ ] Total Guests count increases by 1
+- [ ] **NO loading spinner**
+- [ ] **Scroll position maintained**
+- [ ] Update happens smoothly
+- [ ] New guest appears in guest list
+
+### Pass Criteria:
+✅ Guest added without page reload
+
+---
+
+## Test 7: 🗑️ Delete Guest
+
+### Steps:
+1. [ ] Device A: Go to Overview tab
+2. [ ] Device B: Delete a guest
+3. [ ] Device A: Observe stats
+
+### Expected Results:
+- [ ] Total Guests count decreases by 1
+- [ ] If guest was checked in, Checked In count decreases
+- [ ] **NO loading spinner**
+- [ ] Stats update smoothly
+
+### Pass Criteria:
+✅ Guest deleted without page reload
+
+---
+
+## Test 8: 📱 Mobile Responsiveness
+
+### Steps:
+1. [ ] Open on mobile device or resize browser to mobile width
+2. [ ] Test all 3 fixes on mobile
+
+### Expected Results:
+- [ ] Timestamps display correctly on mobile
+- [ ] "Manage Guests" button works on mobile
+- [ ] Updates work smoothly on mobile
+- [ ] No layout issues
+
+### Pass Criteria:
+✅ All fixes work on mobile devices
+
+---
+
+## Test 9: 🌐 Network Interruption
+
+### Steps:
+1. [ ] Device A: Open dashboard
+2. [ ] Disconnect internet for 10 seconds
+3. [ ] Reconnect internet
+4. [ ] Device B: Scan a guest
+
+### Expected Results:
+- [ ] Real-time subscription reconnects automatically
+- [ ] Updates resume after reconnection
+- [ ] No errors in console
+- [ ] Stats update correctly
+
+### Pass Criteria:
+✅ Graceful handling of network issues
+
+---
+
+## Test 10: ⚡ Performance
+
+### Steps:
+1. [ ] Open browser DevTools
+2. [ ] Go to Performance tab
+3. [ ] Start recording
+4. [ ] Scan a guest on another device
+5. [ ] Stop recording after update
+
+### Expected Results:
+- [ ] Update completes in <500ms
+- [ ] No long tasks (>50ms)
+- [ ] Minimal component re-renders
+- [ ] No memory leaks
+
+### Pass Criteria:
+✅ Performance is smooth and efficient
+
+---
+
+## 🐛 Edge Cases
+
+### Edge Case 1: Rapid Check-ins
+1. [ ] Scan 5 guests rapidly (within 5 seconds)
+2. [ ] Verify all timestamps are unique and accurate
+3. [ ] Verify no duplicate notifications
+
+### Edge Case 2: Old Check-ins
+1. [ ] Check guest that was checked in yesterday
+2. [ ] Verify timestamp shows "1d ago" (not "1 day ago")
+3. [ ] Verify it's accurate
+
+### Edge Case 3: No Events
+1. [ ] Delete all events
+2. [ ] Click "Manage Guests"
+3. [ ] Verify toast message appears
+4. [ ] Verify no errors
+
+### Edge Case 4: Multiple Tabs
+1. [ ] Open dashboard in 2 tabs on same browser
+2. [ ] Scan guest on another device
+3. [ ] Verify both tabs update correctly
+
+---
+
+## 📋 Final Checklist
+
+### Code Quality:
+- [ ] No console errors
+- [ ] No TypeScript errors
+- [ ] Build completes successfully
+- [ ] All imports resolve correctly
+
+### Functionality:
+- [ ] All 3 issues are fixed
+- [ ] No regressions in existing features
+- [ ] Real-time updates still work
+- [ ] All tabs function correctly
+
+### Performance:
+- [ ] Updates happen in <500ms
+- [ ] No loading spinners during real-time updates
+- [ ] Scroll position maintained
+- [ ] Smooth animations
+
+### User Experience:
+- [ ] Timestamps are accurate
+- [ ] Navigation is intuitive
+- [ ] No page reloads
+- [ ] Professional appearance
+
+---
+
+## ✅ Sign-Off
+
+### Tested By: ___________________
+### Date: ___________________
+### Environment: ___________________
+
+### Issues Found:
+- [ ] None - Ready for production ✅
+- [ ] Minor issues (list below)
+- [ ] Major issues (list below)
+
+### Notes:
+```
+[Add any additional notes here]
+```
+
+---
+
+## 🚀 Deployment Approval
+
+- [ ] All tests passed
+- [ ] No critical issues found
+- [ ] Documentation complete
+- [ ] Ready for production deployment
+
+**Approved By:** ___________________
+**Date:** ___________________
+
+---
+
+## 📞 Support
+
+If any issues are found during testing:
 1. Check browser console for errors
-2. Verify device volume is up
-3. Try clicking anywhere on page first (iOS requirement)
-4. Check if browser has audio permissions
+2. Verify network connection
+3. Clear browser cache and reload
+4. Check Supabase connection status
+5. Review `REALTIME_IMPROVEMENTS.md` for troubleshooting
 
-### Scanner Not Opening
-1. Check browser console for errors
-2. Verify event has guests
-3. Check camera permissions
-4. Try refreshing the page
-
-### Progress Bar Wrong Color
-1. Verify attendance calculation is correct
-2. Check if event has totalGuests > 0
-3. Refresh page to get latest data
-
-### Auto-Completion Not Working
-1. Verify event is more than 24 hours past start time
-2. Check event status is "active" (not "draft" or "completed")
-3. Refresh page to trigger check
-4. Check browser console for errors
-
----
-
-## Success Criteria
-
-✅ All features work as expected
-✅ No console errors
-✅ Smooth animations and transitions
-✅ Audio feedback is clear and distinct
-✅ Loading states prevent confusion
-✅ Scanner opens instantly from event cards
-✅ Events auto-complete after 24 hours
-
----
-
-## Report Issues
-
-If you find any bugs or unexpected behavior:
-
-1. Note which feature is affected
-2. Describe what you expected vs. what happened
-3. Check browser console for errors
-4. Note your browser and device
-5. Try to reproduce the issue
-
----
-
-## Next Steps After Testing
-
-1. ✅ Verify all features work correctly
-2. ✅ Test on multiple devices/browsers
-3. ✅ Gather user feedback from ushers
-4. ✅ Monitor performance in production
-5. ✅ Consider additional enhancements based on feedback
+**Status: Ready for Testing ✅**

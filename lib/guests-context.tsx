@@ -1,8 +1,9 @@
 "use client"
 
-import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react"
+import { createContext, useCallback, useContext, useEffect, useMemo, useState, useRef, type ReactNode } from "react"
 import { GuestService } from "./guest-service"
 import { useEvents } from "./events-context"
+import { createBrowserSupabaseClient } from "./supabase/browser"
 
 export interface Guest {
   id: string
@@ -10,6 +11,8 @@ export interface Guest {
   name: string
   email?: string
   phone?: string
+  seatingArea?: 'Reserved' | 'Free Seating'
+  cuisineChoice?: 'Traditional' | 'Western'
   uniqueCode: string
   checkedIn: boolean
   checkedInAt?: string
@@ -62,9 +65,12 @@ export function useGuests() {
 }
 
 export function GuestsProvider({ children }: { children: ReactNode }) {
-  const { events, refreshEvents } = useEvents()
+  const { events, refreshEventsSilently } = useEvents()
   const [guests, setGuests] = useState<Guest[]>([])
   const [loading, setLoading] = useState(true)
+  const [hasInitiallyLoaded, setHasInitiallyLoaded] = useState(false)
+  const supabaseClient = useRef(createBrowserSupabaseClient())
+  const isMountedRef = useRef(true)
 
   const refreshGuests = useCallback(async () => {
     setLoading(true)
@@ -79,12 +85,139 @@ export function GuestsProvider({ children }: { children: ReactNode }) {
       console.error("Failed to load guests", error)
     } finally {
       setLoading(false)
+      setHasInitiallyLoaded(true)
     }
   }, [events])
 
+  // Refresh guests when events are loaded
   useEffect(() => {
-    refreshGuests()
-  }, [refreshGuests])
+    // Only refresh if we have events and haven't loaded yet, OR if events changed
+    if (events.length > 0 && !hasInitiallyLoaded) {
+      refreshGuests()
+    }
+  }, [events.length, refreshGuests, hasInitiallyLoaded])
+
+  // NOTE: Removed 30-second polling interval - now relying solely on real-time subscriptions
+  // for guest updates. This prevents unnecessary page refreshes.
+
+  // Set up real-time subscription for guest updates
+  useEffect(() => {
+    if (events.length === 0) return
+
+    isMountedRef.current = true
+    const eventIds = events.map((e) => e.id)
+    
+    console.log("🔄 Setting up real-time guest subscription for", eventIds.length, "events")
+    
+    const channel = supabaseClient.current
+      .channel("guests-realtime", {
+        config: {
+          broadcast: { self: false },
+          presence: { key: "" },
+        },
+      })
+      .on(
+        "postgres_changes",
+        {
+          event: "*", // Listen to all changes (INSERT, UPDATE, DELETE)
+          schema: "public",
+          table: "guests",
+          filter: `event_id=in.(${eventIds.join(",")})`,
+        },
+        (payload) => {
+          // Only update state if component is still mounted
+          if (!isMountedRef.current) return
+          
+          console.log("📡 Real-time guest update received:", payload.eventType)
+          
+          if (payload.eventType === "INSERT") {
+            const newGuest = payload.new as any
+            setGuests((prev) => {
+              // Avoid duplicates
+              if (prev.some((g) => g.id === newGuest.id)) return prev
+              return [...prev, {
+                id: newGuest.id,
+                eventId: newGuest.event_id,
+                name: newGuest.name,
+                email: newGuest.email,
+                phone: newGuest.phone,
+                seatingArea: newGuest.seating_area,
+                cuisineChoice: newGuest.cuisine_choice,
+                uniqueCode: newGuest.unique_code,
+                checkedIn: newGuest.checked_in,
+                checkedInAt: newGuest.checked_in_at,
+                checkedInBy: newGuest.checked_in_by,
+                usherName: newGuest.usher_name,
+                usherEmail: newGuest.usher_email,
+                attended: newGuest.attended,
+                photoUrl: newGuest.photo_url,
+                firstCheckinAt: newGuest.first_checkin_at,
+                createdAt: newGuest.created_at,
+              }]
+            })
+            // Refresh events silently to update counts without showing loading state
+            refreshEventsSilently()
+          } else if (payload.eventType === "UPDATE") {
+            const updatedGuest = payload.new as any
+            setGuests((prev) =>
+              prev.map((guest) =>
+                guest.id === updatedGuest.id
+                  ? {
+                      ...guest,
+                      name: updatedGuest.name,
+                      email: updatedGuest.email,
+                      phone: updatedGuest.phone,
+                      seatingArea: updatedGuest.seating_area,
+                      cuisineChoice: updatedGuest.cuisine_choice,
+                      checkedIn: updatedGuest.checked_in,
+                      checkedInAt: updatedGuest.checked_in_at,
+                      checkedInBy: updatedGuest.checked_in_by,
+                      usherName: updatedGuest.usher_name,
+                      usherEmail: updatedGuest.usher_email,
+                      attended: updatedGuest.attended,
+                      photoUrl: updatedGuest.photo_url,
+                      firstCheckinAt: updatedGuest.first_checkin_at,
+                    }
+                  : guest
+              )
+            )
+            // Refresh events silently to update counts without showing loading state
+            refreshEventsSilently()
+          } else if (payload.eventType === "DELETE") {
+            const deletedGuest = payload.old as any
+            setGuests((prev) => prev.filter((guest) => guest.id !== deletedGuest.id))
+            // Refresh events silently to update counts without showing loading state
+            refreshEventsSilently()
+          }
+        }
+      )
+      .subscribe((status, err) => {
+        if (status === "SUBSCRIBED") {
+          console.log("✅ Real-time guest subscription connected")
+        } else if (status === "CHANNEL_ERROR") {
+          console.error("❌ Real-time guest subscription error:", err)
+          setTimeout(() => {
+            if (isMountedRef.current) {
+              console.log("🔄 Attempting to reconnect guest subscription...")
+              channel.subscribe()
+            }
+          }, 3000)
+        } else if (status === "TIMED_OUT") {
+          console.warn("⏱️ Real-time guest subscription timed out, reconnecting...")
+          if (isMountedRef.current) {
+            channel.subscribe()
+          }
+        } else if (status === "CLOSED") {
+          console.warn("🔌 Real-time guest subscription closed")
+        }
+      })
+
+    return () => {
+      isMountedRef.current = false
+      console.log("🧹 Cleaning up real-time guest subscription")
+      supabaseClient.current.removeChannel(channel)
+    }
+  }, [events, refreshEventsSilently])
 
   const getGuestsByEvent = useMemo(
     () =>
@@ -127,7 +260,7 @@ export function GuestsProvider({ children }: { children: ReactNode }) {
       }
 
       setGuests((prev) => [...prev, guest])
-      await refreshEvents()
+      await refreshEventsSilently()
       return guest
     } catch (error) {
       console.error("Failed to create guest", error)
@@ -176,7 +309,7 @@ export function GuestsProvider({ children }: { children: ReactNode }) {
       })
 
       setGuests((prev) => [...prev, ...newGuests])
-      await refreshEvents()
+      await refreshEventsSilently()
       return created
     } catch (error) {
       console.error("Failed to create guests bulk", error)
@@ -200,7 +333,7 @@ export function GuestsProvider({ children }: { children: ReactNode }) {
             : guest,
         ),
       )
-      await refreshEvents()
+      await refreshEventsSilently()
     } catch (error) {
       console.error("Failed to update guest", error)
     }
@@ -210,7 +343,7 @@ export function GuestsProvider({ children }: { children: ReactNode }) {
     try {
       await GuestService.deleteGuest(id)
       setGuests((prev) => prev.filter((guest) => guest.id !== id))
-      await refreshEvents()
+      await refreshEventsSilently()
     } catch (error) {
       console.error("Failed to delete guest", error)
       throw error
@@ -222,7 +355,7 @@ export function GuestsProvider({ children }: { children: ReactNode }) {
       // Delete all guests in parallel
       await Promise.all(ids.map((id) => GuestService.deleteGuest(id)))
       setGuests((prev) => prev.filter((guest) => !ids.includes(guest.id)))
-      await refreshEvents()
+      await refreshEventsSilently()
     } catch (error) {
       console.error("Failed to delete guests in bulk", error)
       throw error
@@ -250,7 +383,7 @@ export function GuestsProvider({ children }: { children: ReactNode }) {
               : guest,
           ),
         )
-        await refreshEvents()
+        await refreshEventsSilently()
       }
 
       return result

@@ -7,10 +7,15 @@ export interface Guest {
   id: string
   name: string
   email?: string
+  phone?: string
+  seatingArea?: 'Reserved' | 'Free Seating'
+  cuisineChoice?: 'Traditional' | 'Western'
   uniqueCode: string
   checkedIn: boolean
   checkedInAt?: string
   checkedInBy?: string
+  usherName?: string
+  usherEmail?: string
   createdAt?: string
 }
 
@@ -45,11 +50,11 @@ export function calculateAnalytics(guests: Guest[]) {
     }
   })
   
-  // Check-in by usher
+  // Check-in by usher (use usherName for real usher statistics)
   const checkInsByUsher: { [usher: string]: number } = {}
   guests.forEach(guest => {
-    if (guest.checkedIn && guest.checkedInBy) {
-      const usher = guest.checkedInBy
+    if (guest.checkedIn && guest.usherName) {
+      const usher = guest.usherName
       checkInsByUsher[usher] = (checkInsByUsher[usher] || 0) + 1
     }
   })
@@ -76,10 +81,13 @@ export function exportToExcel(data: ExportData) {
   const guestData = guests.map(guest => ({
     'Name': guest.name,
     'Email': guest.email || '',
+    'Phone': guest.phone || '',
+    'Seating Area': guest.seatingArea || '',
+    'Cuisine Choice': guest.cuisineChoice || '',
     'Unique Code': guest.uniqueCode,
     'Checked In': guest.checkedIn ? 'Yes' : 'No',
     'Check-in Time': guest.checkedInAt ? format(new Date(guest.checkedInAt), 'MMM dd, yyyy HH:mm') : '',
-    'Checked In By': guest.checkedInBy || '',
+    'Checked By': guest.usherName || guest.checkedInBy || '',
     'Registration Date': guest.createdAt ? format(new Date(guest.createdAt), 'MMM dd, yyyy') : '',
   }))
   const ws1 = XLSX.utils.json_to_sheet(guestData)
@@ -197,24 +205,28 @@ export function exportToPDF(data: ExportData) {
   const tableData = guests.map(guest => [
     guest.name,
     guest.email || '',
+    guest.seatingArea || '',
+    guest.cuisineChoice || '',
     guest.checkedIn ? 'Yes' : 'No',
     guest.checkedInAt ? format(new Date(guest.checkedInAt), 'MMM dd HH:mm') : '',
-    guest.checkedInBy || '',
+    guest.usherName || guest.checkedInBy || '',
   ])
   
   autoTable(doc, {
     startY: yPos,
-    head: [['Name', 'Email', 'Checked In', 'Check-in Time', 'Checked By']],
+    head: [['Name', 'Email', 'Seating', 'Cuisine', 'Checked In', 'Check-in Time', 'Checked By']],
     body: tableData,
     theme: 'striped',
     headStyles: { fillColor: [59, 130, 246] }, // Blue
-    styles: { fontSize: 9 },
+    styles: { fontSize: 8 },
     columnStyles: {
-      0: { cellWidth: 40 },
-      1: { cellWidth: 50 },
+      0: { cellWidth: 35 },
+      1: { cellWidth: 40 },
       2: { cellWidth: 20 },
-      3: { cellWidth: 35 },
-      4: { cellWidth: 35 },
+      3: { cellWidth: 20 },
+      4: { cellWidth: 15 },
+      5: { cellWidth: 30 },
+      6: { cellWidth: 30 },
     },
   })
   

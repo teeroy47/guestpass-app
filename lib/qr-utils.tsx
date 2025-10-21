@@ -31,14 +31,22 @@ export async function generateQRCodeSVG(data: string, size = 200): Promise<strin
 }
 
 // Convert an SVG string into a PNG and trigger download in the browser
-export async function downloadQRCodeAsPNGFromSVG(svgString: string, filename: string, size = 400): Promise<void> {
+export async function downloadQRCodeAsPNGFromSVG(
+  svgString: string,
+  filename: string,
+  size = 400,
+  guestName?: string
+): Promise<void> {
   return new Promise((resolve) => {
     const canvas = document.createElement("canvas")
     const ctx = canvas.getContext("2d")
     if (!ctx) return resolve()
 
+    // Add extra height for guest name if provided
+    const textHeight = guestName ? 60 : 0
+    const padding = 20
     canvas.width = size
-    canvas.height = size
+    canvas.height = size + textHeight
 
     const img = new Image()
     img.crossOrigin = "anonymous"
@@ -46,10 +54,22 @@ export async function downloadQRCodeAsPNGFromSVG(svgString: string, filename: st
     img.onload = () => {
       // Fill white background
       ctx.fillStyle = "white"
-      ctx.fillRect(0, 0, size, size)
+      ctx.fillRect(0, 0, canvas.width, canvas.height)
 
       // Draw the QR code
       ctx.drawImage(img, 0, 0, size, size)
+
+      // Draw guest name if provided
+      if (guestName) {
+        ctx.fillStyle = "#000000"
+        ctx.font = "bold 24px Arial, sans-serif"
+        ctx.textAlign = "center"
+        ctx.textBaseline = "middle"
+        
+        // Draw text in the center of the text area
+        const textY = size + textHeight / 2
+        ctx.fillText(guestName, canvas.width / 2, textY)
+      }
 
       // Download as PNG
       canvas.toBlob((blob) => {
@@ -71,6 +91,6 @@ export async function downloadQRCodeAsPNGFromSVG(svgString: string, filename: st
   })
 }
 
-export async function downloadQRCodeAsPNG(svgString: string, filename: string, size = 400) {
-  return downloadQRCodeAsPNGFromSVG(svgString, filename, size)
+export async function downloadQRCodeAsPNG(svgString: string, filename: string, size = 400, guestName?: string) {
+  return downloadQRCodeAsPNGFromSVG(svgString, filename, size, guestName)
 }

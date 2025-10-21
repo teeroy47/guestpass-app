@@ -66,6 +66,9 @@ export function EventDetailsDialog({ eventId, open, onOpenChange, defaultTab = "
   const [guestForm, setGuestForm] = useState({
     name: "",
     email: "",
+    phone: "",
+    seatingArea: "Free Seating" as 'Reserved' | 'Free Seating',
+    cuisineChoice: "Traditional" as 'Traditional' | 'Western',
   })
 
   const [editingGuestId, setEditingGuestId] = useState<string | null>(null)
@@ -344,7 +347,13 @@ export function EventDetailsDialog({ eventId, open, onOpenChange, defaultTab = "
   }
 
   const resetGuestForm = () => {
-    setGuestForm({ name: "", email: "" })
+    setGuestForm({ 
+      name: "", 
+      email: "", 
+      phone: "", 
+      seatingArea: "Free Seating",
+      cuisineChoice: "Traditional"
+    })
     setGuestFormErrors(null)
     setEditingGuestId(null)
   }
@@ -375,6 +384,9 @@ export function EventDetailsDialog({ eventId, open, onOpenChange, defaultTab = "
         await updateGuest(editingGuestId, {
           name: guestForm.name.trim(),
           email: guestForm.email.trim() || undefined,
+          phone: guestForm.phone.trim() || undefined,
+          seatingArea: guestForm.seatingArea,
+          cuisineChoice: guestForm.cuisineChoice,
         })
         toast({
           title: "Guest updated",
@@ -386,6 +398,9 @@ export function EventDetailsDialog({ eventId, open, onOpenChange, defaultTab = "
           eventId: event.id,
           name: guestForm.name.trim(),
           email: guestForm.email.trim() || undefined,
+          phone: guestForm.phone.trim() || undefined,
+          seatingArea: guestForm.seatingArea,
+          cuisineChoice: guestForm.cuisineChoice,
           checkedInBy: undefined,
         })
         
@@ -424,6 +439,9 @@ export function EventDetailsDialog({ eventId, open, onOpenChange, defaultTab = "
     setGuestForm({
       name: guest.name,
       email: guest.email || "",
+      phone: guest.phone || "",
+      seatingArea: guest.seatingArea || "Free Seating",
+      cuisineChoice: guest.cuisineChoice || "Traditional",
     })
     setEditingGuestId(guest.id)
   }
@@ -831,31 +849,88 @@ export function EventDetailsDialog({ eventId, open, onOpenChange, defaultTab = "
                 ) : null}
 
                 {showAdminControls && !isEventCompleted && (
-                  <div className="grid gap-3 md:grid-cols-2">
-                    <div className="space-y-2">
-                      <label className="text-sm font-medium" htmlFor="guest-name">
-                        Guest name
-                      </label>
-                      <Input
-                        id="guest-name"
-                        placeholder="Enter guest name"
-                        value={guestForm.name}
-                        onChange={(event) => setGuestForm((prev) => ({ ...prev, name: event.target.value }))}
-                        disabled={isGuestSubmitting}
-                      />
+                  <div className="space-y-3">
+                    <div className="grid gap-3 md:grid-cols-2">
+                      <div className="space-y-2">
+                        <label className="text-sm font-medium" htmlFor="guest-name">
+                          Guest name
+                        </label>
+                        <Input
+                          id="guest-name"
+                          placeholder="Enter guest name"
+                          value={guestForm.name}
+                          onChange={(event) => setGuestForm((prev) => ({ ...prev, name: event.target.value }))}
+                          disabled={isGuestSubmitting}
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <label className="text-sm font-medium" htmlFor="guest-email">
+                          Email (optional)
+                        </label>
+                        <Input
+                          id="guest-email"
+                          type="email"
+                          placeholder="Enter guest email"
+                          value={guestForm.email}
+                          onChange={(event) => setGuestForm((prev) => ({ ...prev, email: event.target.value }))}
+                          disabled={isGuestSubmitting}
+                        />
+                      </div>
                     </div>
-                    <div className="space-y-2">
-                      <label className="text-sm font-medium" htmlFor="guest-email">
-                        Email (optional)
-                      </label>
-                      <Input
-                        id="guest-email"
-                        type="email"
-                        placeholder="Enter guest email"
-                        value={guestForm.email}
-                        onChange={(event) => setGuestForm((prev) => ({ ...prev, email: event.target.value }))}
-                        disabled={isGuestSubmitting}
-                      />
+                    <div className="grid gap-3 md:grid-cols-3">
+                      <div className="space-y-2">
+                        <label className="text-sm font-medium" htmlFor="guest-phone">
+                          Phone (optional)
+                        </label>
+                        <Input
+                          id="guest-phone"
+                          type="tel"
+                          placeholder="+263785211893"
+                          value={guestForm.phone}
+                          onChange={(event) => setGuestForm((prev) => ({ ...prev, phone: event.target.value }))}
+                          disabled={isGuestSubmitting}
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <label className="text-sm font-medium" htmlFor="guest-seating">
+                          Seating Area
+                        </label>
+                        <Select
+                          value={guestForm.seatingArea}
+                          onValueChange={(value: 'Reserved' | 'Free Seating') => 
+                            setGuestForm((prev) => ({ ...prev, seatingArea: value }))
+                          }
+                          disabled={isGuestSubmitting}
+                        >
+                          <SelectTrigger id="guest-seating">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="Reserved">Reserved</SelectItem>
+                            <SelectItem value="Free Seating">Free Seating</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div className="space-y-2">
+                        <label className="text-sm font-medium" htmlFor="guest-cuisine">
+                          Cuisine Choice
+                        </label>
+                        <Select
+                          value={guestForm.cuisineChoice}
+                          onValueChange={(value: 'Traditional' | 'Western') => 
+                            setGuestForm((prev) => ({ ...prev, cuisineChoice: value }))
+                          }
+                          disabled={isGuestSubmitting}
+                        >
+                          <SelectTrigger id="guest-cuisine">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="Traditional">Traditional</SelectItem>
+                            <SelectItem value="Western">Western</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
                     </div>
                   </div>
                 )}
