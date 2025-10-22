@@ -12,6 +12,7 @@ export interface SupabaseCreateGuestInput {
   checkedInBy?: string
   usherName?: string
   usherEmail?: string
+  customData?: Record<string, any>
 }
 
 export class SupabaseGuestService {
@@ -54,6 +55,7 @@ export class SupabaseGuestService {
       invitationSentAt: row.invitation_sent_at ?? undefined,
       photoUrl: row.photo_url ?? undefined,
       firstCheckinAt: row.first_checkin_at ?? undefined,
+      customData: row.custom_data ?? {},
       createdAt: new Date(row.created_at).toISOString(),
     }
   }
@@ -82,6 +84,7 @@ export class SupabaseGuestService {
           invitation_sent_at,
           photo_url,
           first_checkin_at,
+          custom_data,
           created_at,
           updated_at
         `,
@@ -108,6 +111,7 @@ export class SupabaseGuestService {
         seating_area: data.seatingArea ?? 'Free Seating',
         cuisine_choice: data.cuisineChoice ?? 'Traditional',
         checked_in_by: data.checkedInBy ?? null,
+        custom_data: data.customData ?? {},
       })
       .select(
         `
@@ -129,6 +133,7 @@ export class SupabaseGuestService {
           invitation_sent_at,
           photo_url,
           first_checkin_at,
+          custom_data,
           created_at,
           updated_at
         `,
@@ -160,12 +165,13 @@ export class SupabaseGuestService {
       seating_area: guest.seatingArea ?? 'Free Seating',
       cuisine_choice: guest.cuisineChoice ?? 'Traditional',
       checked_in_by: guest.checkedInBy ?? null,
+      custom_data: guest.customData ?? {},
     }))
 
     const { data, error } = await client
       .from("guests")
       .insert(payload)
-      .select("id, unique_code, name, email, phone, seating_area, cuisine_choice")
+      .select("id, unique_code, name, email, phone, seating_area, cuisine_choice, custom_data")
 
     if (error) {
       throw error
@@ -179,6 +185,7 @@ export class SupabaseGuestService {
       phone: (row as { phone: string | null }).phone ?? undefined,
       seatingArea: (row as { seating_area: 'Reserved' | 'Free Seating' }).seating_area,
       cuisineChoice: (row as { cuisine_choice: 'Traditional' | 'Western' }).cuisine_choice,
+      customData: (row as { custom_data: Record<string, any> }).custom_data ?? {},
     }))
   }
 
@@ -219,6 +226,9 @@ export class SupabaseGuestService {
     if (updates.attended !== undefined) {
       payload.attended = updates.attended
     }
+    if (updates.customData !== undefined) {
+      payload.custom_data = updates.customData
+    }
 
     const { data, error } = await client
       .from("guests")
@@ -244,6 +254,7 @@ export class SupabaseGuestService {
           invitation_sent_at,
           photo_url,
           first_checkin_at,
+          custom_data,
           created_at,
           updated_at
         `,
@@ -377,6 +388,7 @@ export class SupabaseGuestService {
           invitation_sent_at,
           photo_url,
           first_checkin_at,
+          custom_data,
           created_at,
           updated_at
         `,
@@ -410,6 +422,7 @@ export class SupabaseGuestService {
             invitation_sent_at,
             photo_url,
             first_checkin_at,
+            custom_data,
             created_at,
             updated_at
           `,

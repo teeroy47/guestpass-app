@@ -20,7 +20,7 @@ import { exportToExcel, exportToPDF } from "@/lib/export-utils"
 import { SupabaseGuestService } from "@/lib/supabase/guest-service"
 import { AnalyticsDashboard } from "@/components/analytics/analytics-dashboard"
 import { GuestUploadDialog } from "@/components/guests/guest-upload-dialog"
-import { Calendar, Users, Download, Upload, BarChart3, Loader2, Plus, Trash2, Pencil, X, Check, ShieldAlert, FileSpreadsheet, FileText, Mail, Send } from "lucide-react"
+import { Calendar, Users, Download, Upload, BarChart3, Loader2, Plus, Trash2, Pencil, X, Check, ShieldAlert, FileSpreadsheet, FileText, Mail, Send, Tag } from "lucide-react"
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -69,6 +69,7 @@ export function EventDetailsDialog({ eventId, open, onOpenChange, defaultTab = "
     phone: "",
     seatingArea: "Free Seating" as 'Reserved' | 'Free Seating',
     cuisineChoice: "Traditional" as 'Traditional' | 'Western',
+    customData: {} as Record<string, any>,
   })
 
   const [editingGuestId, setEditingGuestId] = useState<string | null>(null)
@@ -78,6 +79,9 @@ export function EventDetailsDialog({ eventId, open, onOpenChange, defaultTab = "
   const [selectedGuests, setSelectedGuests] = useState<Set<string>>(new Set())
   const [isSendingInvites, setIsSendingInvites] = useState(false)
   const [isUploadDialogOpen, setIsUploadDialogOpen] = useState(false)
+  const [isCustomFieldDialogOpen, setIsCustomFieldDialogOpen] = useState(false)
+  const [customFieldName, setCustomFieldName] = useState("")
+  const [customFieldValue, setCustomFieldValue] = useState("")
 
   useEffect(() => {
     if (event && open) {
@@ -352,10 +356,13 @@ export function EventDetailsDialog({ eventId, open, onOpenChange, defaultTab = "
       email: "", 
       phone: "", 
       seatingArea: "Free Seating",
-      cuisineChoice: "Traditional"
+      cuisineChoice: "Traditional",
+      customData: {}
     })
     setGuestFormErrors(null)
     setEditingGuestId(null)
+    setCustomFieldName("")
+    setCustomFieldValue("")
   }
 
   const validateGuestForm = () => {
@@ -387,6 +394,7 @@ export function EventDetailsDialog({ eventId, open, onOpenChange, defaultTab = "
           phone: guestForm.phone.trim() || undefined,
           seatingArea: guestForm.seatingArea,
           cuisineChoice: guestForm.cuisineChoice,
+          customData: Object.keys(guestForm.customData).length > 0 ? guestForm.customData : undefined,
         })
         toast({
           title: "Guest updated",
@@ -401,6 +409,7 @@ export function EventDetailsDialog({ eventId, open, onOpenChange, defaultTab = "
           phone: guestForm.phone.trim() || undefined,
           seatingArea: guestForm.seatingArea,
           cuisineChoice: guestForm.cuisineChoice,
+          customData: Object.keys(guestForm.customData).length > 0 ? guestForm.customData : undefined,
           checkedInBy: undefined,
         })
         
@@ -435,6 +444,41 @@ export function EventDetailsDialog({ eventId, open, onOpenChange, defaultTab = "
     }
   }
 
+  const handleAddCustomField = () => {
+    if (!customFieldName.trim()) {
+      setGuestFormErrors("Field name is required.")
+      return
+    }
+
+    const fieldNameCamelCase = customFieldName
+      .trim()
+      .toLowerCase()
+      .replace(/[^a-z0-9]+(.)/g, (_, char) => char.toUpperCase())
+
+    setGuestForm((prev) => ({
+      ...prev,
+      customData: {
+        ...prev.customData,
+        [fieldNameCamelCase]: customFieldValue.trim(),
+      },
+    }))
+
+    setCustomFieldName("")
+    setCustomFieldValue("")
+    setGuestFormErrors(null)
+  }
+
+  const handleRemoveCustomField = (fieldName: string) => {
+    setGuestForm((prev) => {
+      const newCustomData = { ...prev.customData }
+      delete newCustomData[fieldName]
+      return {
+        ...prev,
+        customData: newCustomData,
+      }
+    })
+  }
+
   const handleEditGuest = (guest: Guest) => {
     setGuestForm({
       name: guest.name,
@@ -442,6 +486,7 @@ export function EventDetailsDialog({ eventId, open, onOpenChange, defaultTab = "
       phone: guest.phone || "",
       seatingArea: guest.seatingArea || "Free Seating",
       cuisineChoice: guest.cuisineChoice || "Traditional",
+      customData: guest.customData || {},
     })
     setEditingGuestId(guest.id)
   }
@@ -932,6 +977,52 @@ export function EventDetailsDialog({ eventId, open, onOpenChange, defaultTab = "
                         </Select>
                       </div>
                     </div>
+
+                    {/* Custom Fields Section */}
+                    <div className="border-t pt-4 space-y-3">
+                      <div className="flex items-center justify-between">
+                        <label className="text-sm font-medium">Custom Fields</label>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={() => setIsCustomFieldDialogOpen(true)}
+                          disabled={isGuestSubmitting}
+                        >
+                          <Plus className="mr-2 h-4 w-4" />
+                          Add Field
+                        </Button>
+                      </div>
+
+                      {/* Display added custom fields */}
+                      {Object.keys(guestForm.customData).length > 0 && (
+                        <div className="space-y-2">
+                          {Object.entries(guestForm.customData).map(([key, value]) => (
+                            <div
+                              key={key}
+                              className="flex items-center justify-between bg-muted p-3 rounded-md text-sm"
+                            >
+                              <div className="flex-1">
+                                <div className="font-medium text-foreground capitalize">
+                                  {key.replace(/([A-Z])/g, " $1").toLowerCase()}
+                                </div>
+                                <div className="text-muted-foreground text-xs mt-1">{String(value)}</div>
+                              </div>
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => handleRemoveCustomField(key)}
+                                disabled={isGuestSubmitting}
+                                className="text-destructive hover:text-destructive"
+                              >
+                                <X className="h-4 w-4" />
+                              </Button>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
                   </div>
                 )}
 
@@ -1076,6 +1167,77 @@ export function EventDetailsDialog({ eventId, open, onOpenChange, defaultTab = "
         open={isUploadDialogOpen}
         onOpenChange={setIsUploadDialogOpen}
       />
+
+      {/* Custom Field Dialog */}
+      <Dialog open={isCustomFieldDialogOpen} onOpenChange={setIsCustomFieldDialogOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Tag className="h-5 w-5" />
+              Add Custom Field
+            </DialogTitle>
+            <DialogDescription>
+              Add a custom field to this guest's profile. Field names will be formatted automatically.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <label className="text-sm font-medium" htmlFor="field-name">
+                Field Name
+              </label>
+              <Input
+                id="field-name"
+                placeholder="e.g., Parking, Table Assignment, Dietary Notes"
+                value={customFieldName}
+                onChange={(e) => setCustomFieldName(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    handleAddCustomField()
+                  }
+                }}
+              />
+            </div>
+
+            <div className="space-y-2">
+              <label className="text-sm font-medium" htmlFor="field-value">
+                Field Value
+              </label>
+              <Input
+                id="field-value"
+                placeholder="e.g., Lot A, Table 5, Nut allergy"
+                value={customFieldValue}
+                onChange={(e) => setCustomFieldValue(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    handleAddCustomField()
+                  }
+                }}
+              />
+            </div>
+
+            {guestFormErrors && customFieldName && (
+              <div className="text-sm text-destructive bg-destructive/10 p-2 rounded">
+                {guestFormErrors}
+              </div>
+            )}
+          </div>
+
+          <div className="flex gap-2 justify-end pt-4">
+            <Button
+              variant="outline"
+              onClick={() => {
+                setIsCustomFieldDialogOpen(false)
+                setCustomFieldName("")
+                setCustomFieldValue("")
+              }}
+            >
+              Cancel
+            </Button>
+            <Button onClick={handleAddCustomField}>Add Field</Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </Dialog>
   )
 }

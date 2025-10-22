@@ -17,6 +17,7 @@ interface ParsedGuest {
   phone?: string
   seatingArea?: 'Reserved' | 'Free Seating'
   cuisineChoice?: 'Traditional' | 'Western'
+  customData?: Record<string, any>
   row: number
 }
 
@@ -77,12 +78,35 @@ export function GuestUploadDialog({ eventId, eventTitle, open, onOpenChange }: G
           return
         }
 
-        const headers = lines[0].split(",").map((h) => h.trim().toLowerCase())
-        const nameIndex = headers.findIndex((h) => h.includes("name"))
-        const emailIndex = headers.findIndex((h) => h.includes("email"))
-        const phoneIndex = headers.findIndex((h) => h.includes("phone"))
-        const seatingIndex = headers.findIndex((h) => h.includes("seating"))
-        const cuisineIndex = headers.findIndex((h) => h.includes("cuisine"))
+        // Auto-detect delimiter (comma or tab)
+        const firstLine = lines[0]
+        const hasTab = firstLine.includes("\t")
+        const delimiter = hasTab ? "\t" : ","
+
+        const headers = firstLine.split(delimiter).map((h) => h.trim().toLowerCase())
+        
+        // Create flexible mapping for field names
+        const nameIndex = headers.findIndex((h) => 
+          h === "name" || h === "full name" || h.includes("name")
+        )
+        const emailIndex = headers.findIndex((h) => 
+          h === "email" || h.includes("email")
+        )
+        const phoneIndex = headers.findIndex((h) => 
+          h === "phone" || h === "phone number" || h.includes("phone")
+        )
+        const seatingIndex = headers.findIndex((h) => 
+          h === "seating" || h.includes("seating")
+        )
+        const cuisineIndex = headers.findIndex((h) => 
+          h === "cuisine" || h === "your choice of cuisine:" || h.includes("cuisine")
+        )
+        const parkingIndex = headers.findIndex((h) => 
+          h === "parking:" || h === "parking" || h.includes("parking")
+        )
+
+        // Standard columns that shouldn't be treated as custom fields
+        const standardColumns = new Set([nameIndex, emailIndex, phoneIndex, seatingIndex, cuisineIndex, parkingIndex].filter(i => i !== -1))
 
         if (nameIndex === -1) {
           setError("CSV file must contain a 'name' column")
@@ -93,12 +117,7 @@ export function GuestUploadDialog({ eventId, eventTitle, open, onOpenChange }: G
         const errors: string[] = []
 
         for (let i = 1; i < lines.length; i++) {
-          const values = lines[i].split(",").map((v) => v.trim().replace(/"/g, ""))
-
-          if (values.length < headers.length) {
-            errors.push(`Row ${i + 1}: Insufficient columns`)
-            continue
-          }
+          const values = lines[i].split(delimiter).map((v) => v.trim().replace(/"/g, ""))
 
           const name = values[nameIndex]?.trim()
           if (!name) {
@@ -109,27 +128,67 @@ export function GuestUploadDialog({ eventId, eventTitle, open, onOpenChange }: G
           const email = emailIndex !== -1 ? values[emailIndex]?.trim() : undefined
           const phone = phoneIndex !== -1 ? values[phoneIndex]?.trim() : undefined
           
-          // Parse seating area with validation
-          let seatingArea: 'Reserved' | 'Free Seating' = 'Free Seating'
+          // Parse seating area - accept standard values, store custom ones in customData
+          let seatingArea: 'Reserved' | 'Free Seating' | undefined = undefined
+          let customSeatingArea: string | undefined = undefined
           if (seatingIndex !== -1) {
             const seatingValue = values[seatingIndex]?.trim()
             if (seatingValue === 'Reserved' || seatingValue === 'Free Seating') {
               seatingArea = seatingValue
-            } else if (seatingValue) {
-              errors.push(`Row ${i + 1}: Invalid seating area '${seatingValue}'. Must be 'Reserved' or 'Free Seating'`)
+            } else if (seatingValue && seatingValue !== '') {
+              // Store custom seating values in customData instead of rejecting
+              customSeatingArea = seatingValue
             }
           }
           
-          // Parse cuisine choice with validation
-          let cuisineChoice: 'Traditional' | 'Western' = 'Traditional'
+          // Parse cuisine choice - accept standard values, store custom ones in customData
+          let cuisineChoice: 'Traditional' | 'Western' | undefined = undefined
+          let customCuisineChoice: string | undefined = undefined
           if (cuisineIndex !== -1) {
             const cuisineValue = values[cuisineIndex]?.trim()
             if (cuisineValue === 'Traditional' || cuisineValue === 'Western') {
               cuisineChoice = cuisineValue
-            } else if (cuisineValue) {
-              errors.push(`Row ${i + 1}: Invalid cuisine choice '${cuisineValue}'. Must be 'Traditional' or 'Western'`)
+            } else if (cuisineValue && cuisineValue !== '') {
+              // Store custom cuisine values in customData instead of rejecting
+              customCuisineChoice = cuisineValue
             }
           }
+
+          // Capture any custom fields (columns that aren't standard ones)
+          const customData: Record<string, any> = {}
+          
+          // Add custom seating area if present
+          if (customSeatingArea) {
+            customData['seatingDetails'] = customSeatingArea
+          }
+          
+          // Add custom cuisine choice if present
+          if (customCuisineChoice) {
+            customData['cuisineDetails'] = customCuisineChoice
+          }
+          
+          // Add parking to custom data if present
+          if (parkingIndex !== -1) {
+            const parkingValue = values[parkingIndex]?.trim()
+            if (parkingValue) {
+              customData['parking'] = parkingValue
+            }
+          }
+          
+          headers.forEach((header, index) => {
+            if (!standardColumns.has(index) && values[index]) {
+              // Skip empty Column### headers
+              if (header.match(/^column\d+$/)) {
+                return
+              }
+              // Convert header to camelCase for storage
+              const camelCaseKey = header
+                .replace(/[-_\s:]+(.)?/g, (_, char) => (char ? char.toUpperCase() : ''))
+              if (!customData[camelCaseKey]) { // Don't overwrite if already set
+                customData[camelCaseKey] = values[index]
+              }
+            }
+          })
 
           guests.push({
             name,
@@ -137,6 +196,7 @@ export function GuestUploadDialog({ eventId, eventTitle, open, onOpenChange }: G
             phone: phone || undefined,
             seatingArea,
             cuisineChoice,
+            customData: Object.keys(customData).length > 0 ? customData : undefined,
             row: i + 1,
           })
         }
@@ -172,6 +232,7 @@ export function GuestUploadDialog({ eventId, eventTitle, open, onOpenChange }: G
         phone: guest.phone,
         seatingArea: guest.seatingArea,
         cuisineChoice: guest.cuisineChoice,
+        customData: guest.customData,
       }))
 
       // Simulate progress for better UX
@@ -205,7 +266,7 @@ export function GuestUploadDialog({ eventId, eventTitle, open, onOpenChange }: G
 
   const downloadTemplate = () => {
     const csvContent =
-      "name,email,phone,seating,cuisine\nJohn Smith,john@example.com,+263785211893,Reserved,Traditional\nSarah Johnson,sarah@example.com,+263785211894,Free Seating,Western\nMichael Chen,michael@example.com,+263785211895,Free Seating,Traditional"
+      "Full Name,Email,Phone Number,Seating,Your choice of cuisine:,Parking:\nJohn Smith,john@example.com,+263785211893,Reserved,Traditional,Lot A\nSarah Johnson,sarah@example.com,+263785211894,Free Seating,Western,Lot B\nMichael Chen,michael@example.com,+263785211895,Free Seating,Traditional,Lot A"
     const blob = new Blob([csvContent], { type: "text/csv" })
     const url = window.URL.createObjectURL(blob)
     const a = document.createElement("a")
@@ -317,21 +378,23 @@ export function GuestUploadDialog({ eventId, eventTitle, open, onOpenChange }: G
           <div className="border rounded-md p-4 bg-muted/50">
             <h4 className="font-medium mb-2 text-sm">File Requirements</h4>
             <ul className="text-xs text-muted-foreground space-y-1">
-              <li>• <strong>name</strong> column is required</li>
-              <li>• <strong>email</strong> column is optional</li>
-              <li>• <strong>phone</strong> column is optional (format: +263785211893)</li>
-              <li>• <strong>seating</strong> column is optional (Reserved or Free Seating)</li>
-              <li>• <strong>cuisine</strong> column is optional (Traditional or Western)</li>
+              <li>• <strong>Full Name</strong> (or "name") - Required</li>
+              <li>• <strong>Email</strong> - Optional</li>
+              <li>• <strong>Phone Number</strong> (or "phone") - Optional (format: +263785211893)</li>
+              <li>• <strong>Seating</strong> - Optional (Accepts any value: "Reserved", "Free Seating", "VIP - Table 2", etc.)</li>
+              <li>• <strong>Your choice of cuisine:</strong> (or "cuisine") - Optional (Accepts any value: "Traditional", "Western", custom options, etc.)</li>
+              <li>• <strong>Parking:</strong> - Optional (custom field)</li>
               <li>• First row must contain column headers</li>
-              <li>• CSV format with comma separation</li>
+              <li>• CSV or Tab-separated format supported</li>
+              <li>• Custom seating/cuisine values stored as custom fields (displayed at check-in)</li>
               <li>• Maximum 1000 guests per upload</li>
             </ul>
             <div className="mt-3">
               <p className="text-xs font-medium mb-1">Example CSV:</p>
               <div className="bg-background p-2 rounded text-xs font-mono">
-                name,email,phone,seating,cuisine<br />
-                John Smith,john@example.com,+263785211893,Reserved,Traditional<br />
-                Sarah Johnson,sarah@example.com,+263785211894,Free Seating,Western
+                Full Name,Email,Phone Number,Seating,Your choice of cuisine:,Parking:<br />
+                John Smith,john@example.com,+263785211893,VIP - Table 2,Traditional,Lot A<br />
+                Sarah Johnson,sarah@example.com,+263785211894,Free Seating,Western,Lot B
               </div>
             </div>
           </div>

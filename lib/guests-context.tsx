@@ -23,6 +23,7 @@ export interface Guest {
   photoUrl?: string
   firstCheckinAt?: string
   createdAt: string
+  customData?: Record<string, any>
 }
 
 interface GuestsContextType {

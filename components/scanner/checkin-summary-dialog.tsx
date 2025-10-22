@@ -4,7 +4,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
-import { CheckCircle, User, Phone, UtensilsCrossed, Armchair, Camera, Clock } from "lucide-react"
+import { CheckCircle, User, Phone, UtensilsCrossed, Armchair, Clock } from "lucide-react"
 
 interface CheckInSummaryDialogProps {
   open: boolean
@@ -19,6 +19,7 @@ interface CheckInSummaryDialogProps {
     photoUrl?: string
     checkedInAt?: string
     checkedInBy?: string
+    customData?: Record<string, any>
   }
 }
 
@@ -102,16 +103,26 @@ export function CheckInSummaryDialog({
                   </div>
                 </div>
 
-                {/* Photo Status */}
-                <div className="flex items-center gap-2">
-                  <Camera className="h-4 w-4 text-emerald-600 shrink-0" />
-                  <div className="flex-1 min-w-0">
-                    <span className="text-xs text-muted-foreground">Photo: </span>
-                    <span className="font-medium text-xs">
-                      {guest.photoUrl ? '✓ Captured' : 'Not Taken'}
-                    </span>
-                  </div>
-                </div>
+                {/* Custom Fields */}
+                {guest.customData && Object.keys(guest.customData).length > 0 && (
+                  <>
+                    {Object.entries(guest.customData).map(([key, value]) => (
+                      value !== null && value !== undefined && value !== '' && (
+                        <div key={key} className="flex items-start gap-2">
+                          <div className="text-emerald-600 shrink-0 mt-0.5">•</div>
+                          <div className="flex-1 min-w-0">
+                            <span className="text-xs text-muted-foreground capitalize">
+                              {key.replace(/([A-Z])/g, ' $1').trim()}: 
+                            </span>
+                            <span className="font-medium text-xs block">
+                              {String(value)}
+                            </span>
+                          </div>
+                        </div>
+                      )
+                    ))}
+                  </>
+                )}
               </div>
 
               {/* Check-in Time */}

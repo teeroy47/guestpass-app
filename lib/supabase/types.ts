@@ -29,6 +29,19 @@ export interface SupabaseGuestRow {
   invitation_sent_at: string | null
   photo_url: string | null
   first_checkin_at: string | null
+  custom_data: Record<string, any> | null
+  created_at: string
+  updated_at: string
+}
+
+export interface EventCustomField {
+  id: number
+  event_id: string
+  field_name: string
+  field_label: string
+  field_type: 'text' | 'number' | 'select' | 'date'
+  is_required: boolean
+  sort_order: number
   created_at: string
   updated_at: string
 }
