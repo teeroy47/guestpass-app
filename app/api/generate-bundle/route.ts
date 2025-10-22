@@ -2,6 +2,7 @@ import { NextResponse } from "next/server"
 import QRCode from "qrcode"
 import { PDFDocument, rgb, StandardFonts } from "pdf-lib"
 import JSZip from "jszip"
+import sharp from "sharp"
 
 // Increase the maximum execution time for this route (Vercel)
 export const maxDuration = 60 // 60 seconds for Pro plan, 10 for Hobby
@@ -97,14 +98,14 @@ async function generateZipBundle(eventId: string, guests: GuestInput[]) {
     const uniqueCode = guest.uniqueCode || ''
     
     try {
-      // Generate QR code for this guest as SVG (which we can add text to)
+      // Generate QR code for this guest as SVG
       const data = `${eventId}:${uniqueCode}`
-      const svgString = await QRCode.toString(data, { type: "svg", width: 300 })
+      const qrSvgString = await QRCode.toString(data, { type: "svg", width: 300 })
       
-      // Create SVG with guest name and code below QR
+      // Create SVG with guest name and code below QR (this will be converted to PNG)
       const qrSize = 300
       const textPadding = 20
-      const nameHeight = 50
+      const nameHeight = 60
       const codeHeight = 30
       const totalHeight = qrSize + nameHeight + codeHeight + textPadding * 2
       
@@ -114,7 +115,7 @@ async function generateZipBundle(eventId: string, guests: GuestInput[]) {
   
   <!-- Embedded QR code SVG -->
   <g transform="translate(0, 0)">
-    ${svgString.replace(/<svg[^>]*>|<\/svg>/g, '')}
+    ${qrSvgString.replace(/<svg[^>]*>|<\/svg>/g, '')}
   </g>
   
   <!-- Guest name text (bold, black) -->
@@ -122,8 +123,9 @@ async function generateZipBundle(eventId: string, guests: GuestInput[]) {
     x="${qrSize / 2}" 
     y="${qrSize + nameHeight / 2 + textPadding}" 
     text-anchor="middle" 
-    font-size="24" 
+    font-size="28" 
     font-weight="bold" 
+    font-family="Arial, sans-serif"
     fill="black"
   >${escapeXml(guestName)}</text>
   
@@ -132,20 +134,21 @@ async function generateZipBundle(eventId: string, guests: GuestInput[]) {
     x="${qrSize / 2}" 
     y="${qrSize + nameHeight + codeHeight / 2 + textPadding}" 
     text-anchor="middle" 
-    font-size="14" 
-    fill="#666666"
+    font-size="12" 
+    font-family="Arial, sans-serif"
+    fill="#999999"
   >${escapeXml(uniqueCode)}</text>
 </svg>`
       
-      const fileName = buildPngFilename(eventId, guest).replace('.png', '.svg')
-      zip.file(fileName, svgWithText)
+      // Convert SVG to PNG using sharp for high-quality output
+      const pngBuffer = await sharp(Buffer.from(svgWithText))
+        .png({ quality: 95 })
+        .toBuffer()
       
-      // Also add PNG version for convenience
-      const pngBuffer = await QRCode.toBuffer(data, { type: "png", width: 300 })
       const pngFileName = buildPngFilename(eventId, guest)
       zip.file(pngFileName, pngBuffer)
       
-      // Add a text file with guest information
+      // Also add a text file with guest information for reference
       const infoFileName = pngFileName.replace('.png', '-info.txt')
       const infoContent = `Guest: ${guestName}\nCode: ${uniqueCode}\nEvent ID: ${eventId}`
       zip.file(infoFileName, infoContent)
