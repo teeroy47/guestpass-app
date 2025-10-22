@@ -3,30 +3,6 @@ import QRCode from "qrcode"
 import { PDFDocument, rgb, StandardFonts } from "pdf-lib"
 import JSZip from "jszip"
 
-// Dynamically import canvas (using @napi-rs/canvas which has pre-built binaries)
-let createCanvas: any, loadImage: any
-
-async function initCanvas() {
-  if (createCanvas) return // Already initialized
-  try {
-    // Try @napi-rs/canvas first (has pre-built binaries for Vercel)
-    try {
-      const canvasModule = await import("@napi-rs/canvas")
-      createCanvas = canvasModule.createCanvas
-      loadImage = canvasModule.loadImage
-    } catch {
-      // Fallback to node-canvas if available locally
-      const canvasModule = await import("canvas")
-      createCanvas = canvasModule.createCanvas
-      loadImage = canvasModule.loadImage
-    }
-  } catch (e) {
-    console.warn("Canvas module not available - using plain QR codes")
-    createCanvas = null
-    loadImage = null
-  }
-}
-
 // Increase the maximum execution time for this route (Vercel)
 export const maxDuration = 60 // 60 seconds for Pro plan, 10 for Hobby
 export const dynamic = 'force-dynamic'
@@ -110,10 +86,8 @@ async function generatePdfBundle(eventId: string, guests: GuestInput[]) {
 
 async function generateZipBundle(eventId: string, guests: GuestInput[]) {
   const zip = new JSZip()
-  await initCanvas()
 
-  console.log(`Starting ZIP generation for ${guests.length} guests (sequential processing)...`)
-  console.log(`Canvas available: ${createCanvas !== null}`)
+  console.log(`Starting ZIP generation for ${guests.length} guests...`)
 
   // Process guests sequentially to minimize memory usage
   let processedCount = 0
@@ -123,59 +97,58 @@ async function generateZipBundle(eventId: string, guests: GuestInput[]) {
     const uniqueCode = guest.uniqueCode || ''
     
     try {
-      // Generate QR code for this guest
+      // Generate QR code for this guest as SVG (which we can add text to)
       const data = `${eventId}:${uniqueCode}`
-      const qrDataUrl = await QRCode.toDataURL(data, { width: 400, margin: 2 })
+      const svgString = await QRCode.toString(data, { type: "svg", width: 300 })
       
-      // If canvas is available, add text overlay
-      if (createCanvas && loadImage) {
-        try {
-          // Create canvas with QR code and text
-          const qrSize = 400
-          const textHeight = 100
-          const totalHeight = qrSize + textHeight
-          const canvas = createCanvas(qrSize, totalHeight)
-          const ctx = canvas.getContext('2d')
-          
-          // Fill white background
-          ctx.fillStyle = '#FFFFFF'
-          ctx.fillRect(0, 0, qrSize, totalHeight)
-          
-          // Load and draw QR code
-          const qrImage = await loadImage(qrDataUrl)
-          ctx.drawImage(qrImage, 0, 0, qrSize, qrSize)
-          
-          // Draw guest name (bold, black)
-          ctx.fillStyle = '#000000'
-          ctx.font = 'bold 28px Arial, Helvetica, sans-serif'
-          ctx.textAlign = 'center'
-          ctx.textBaseline = 'middle'
-          ctx.fillText(guestName, qrSize / 2, qrSize + 35)
-          
-          // Draw unique code (smaller, gray)
-          ctx.fillStyle = '#666666'
-          ctx.font = '18px Arial, Helvetica, sans-serif'
-          ctx.fillText(uniqueCode, qrSize / 2, qrSize + 70)
-          
-          // Convert canvas to PNG buffer and add directly to zip
-          const pngBuffer = canvas.toBuffer('image/png')
-          const fileName = buildPngFilename(eventId, guest)
-          zip.file(fileName, pngBuffer)
-        } catch (canvasError) {
-          // Canvas failed, use plain QR code
-          console.warn(`Canvas rendering failed for ${guestName}, using plain QR code:`, canvasError)
-          const base64Data = qrDataUrl.replace(/^data:image\/png;base64,/, '')
-          const qrBuffer = Buffer.from(base64Data, 'base64')
-          const fileName = buildPngFilename(eventId, guest)
-          zip.file(fileName, qrBuffer)
-        }
-      } else {
-        // Canvas not available, use plain QR code
-        const base64Data = qrDataUrl.replace(/^data:image\/png;base64,/, '')
-        const qrBuffer = Buffer.from(base64Data, 'base64')
-        const fileName = buildPngFilename(eventId, guest)
-        zip.file(fileName, qrBuffer)
-      }
+      // Create SVG with guest name and code below QR
+      const qrSize = 300
+      const textPadding = 20
+      const nameHeight = 50
+      const codeHeight = 30
+      const totalHeight = qrSize + nameHeight + codeHeight + textPadding * 2
+      
+      const svgWithText = `<svg width="${qrSize}" height="${totalHeight}" xmlns="http://www.w3.org/2000/svg">
+  <!-- White background -->
+  <rect width="${qrSize}" height="${totalHeight}" fill="white"/>
+  
+  <!-- Embedded QR code SVG -->
+  <g transform="translate(0, 0)">
+    ${svgString.replace(/<svg[^>]*>|<\/svg>/g, '')}
+  </g>
+  
+  <!-- Guest name text (bold, black) -->
+  <text 
+    x="${qrSize / 2}" 
+    y="${qrSize + nameHeight / 2 + textPadding}" 
+    text-anchor="middle" 
+    font-size="24" 
+    font-weight="bold" 
+    fill="black"
+  >${escapeXml(guestName)}</text>
+  
+  <!-- Unique code text (smaller, gray) -->
+  <text 
+    x="${qrSize / 2}" 
+    y="${qrSize + nameHeight + codeHeight / 2 + textPadding}" 
+    text-anchor="middle" 
+    font-size="14" 
+    fill="#666666"
+  >${escapeXml(uniqueCode)}</text>
+</svg>`
+      
+      const fileName = buildPngFilename(eventId, guest).replace('.png', '.svg')
+      zip.file(fileName, svgWithText)
+      
+      // Also add PNG version for convenience
+      const pngBuffer = await QRCode.toBuffer(data, { type: "png", width: 300 })
+      const pngFileName = buildPngFilename(eventId, guest)
+      zip.file(pngFileName, pngBuffer)
+      
+      // Add a text file with guest information
+      const infoFileName = pngFileName.replace('.png', '-info.txt')
+      const infoContent = `Guest: ${guestName}\nCode: ${uniqueCode}\nEvent ID: ${eventId}`
+      zip.file(infoFileName, infoContent)
       
       processedCount++
       if (processedCount % 50 === 0) {
@@ -191,6 +164,16 @@ async function generateZipBundle(eventId: string, guests: GuestInput[]) {
   console.log(`ZIP generated successfully: ${zipBuffer.length} bytes`)
   
   return zipBuffer
+}
+
+// Helper function to escape XML special characters
+function escapeXml(unsafe: string): string {
+  return unsafe
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&apos;")
 }
 
 export async function POST(req: Request) {
