@@ -1,7 +1,7 @@
 {
   "version": 2,
-  "buildCommand": "pnpm install && pnpm run build",
+  "buildCommand": "npm run build",
   "outputDirectory": "dist",
-  "installCommand": "npm install -g pnpm@9 && pnpm install --frozen-lockfile",
+  "installCommand": "npm install --legacy-peer-deps",
   "ignoreCommand": "git diff HEAD^ HEAD --quiet -- app/ lib/ components/ public/ || exit 0"
 }
