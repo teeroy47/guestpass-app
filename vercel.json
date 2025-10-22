@@ -3,6 +3,6 @@
   "framework": "vite",
   "buildCommand": "npm run build",
   "outputDirectory": "dist",
-  "installCommand": "npm install --legacy-peer-deps",
+  "installCommand": "npm ci --legacy-peer-deps 2>/dev/null || npm install --legacy-peer-deps",
   "ignoreCommand": "git diff HEAD^ HEAD --quiet -- app/ lib/ components/ public/ || exit 0"
 }
