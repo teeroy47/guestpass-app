@@ -53,7 +53,7 @@ class ErrorBoundary extends React.Component<
 createRoot(container).render(
   <ErrorBoundary>
     <AuthProvider>
-      <BrowserRouter>
+      <BrowserRouter basename={import.meta.env.BASE_URL === "/" ? undefined : import.meta.env.BASE_URL}>
         <LandingApp />
       </BrowserRouter>
     </AuthProvider>
