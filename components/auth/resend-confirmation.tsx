@@ -1,17 +1,18 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useEffect, useState } from "react"
 import { useNavigate, useSearchParams } from "react-router-dom"
 import { useForm } from "react-hook-form"
 import { z } from "zod"
 import { zodResolver } from "@hookform/resolvers/zod"
+import { ArrowLeft, CheckCircle2, Loader2, Mail } from "lucide-react"
+
+import { useToast } from "@/hooks/use-toast"
+import { useAuth } from "@/lib/auth-context"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form"
 import { Input } from "@/components/ui/input"
-import { useAuth } from "@/lib/auth-context"
-import { useToast } from "@/hooks/use-toast"
-import { Mail, Loader2, ArrowLeft, CheckCircle2 } from "lucide-react"
 
 const formSchema = z.object({
   email: z.string().email({ message: "Enter a valid email address" }),
@@ -19,9 +20,8 @@ const formSchema = z.object({
 
 type FormValues = z.infer<typeof formSchema>
 
-// Rate limiting: Store last resend time in localStorage
 const RATE_LIMIT_KEY = "resend_confirmation_last_sent"
-const RATE_LIMIT_DURATION = 60000 // 60 seconds
+const RATE_LIMIT_DURATION = 60000
 
 export function ResendConfirmation() {
   const { resendConfirmationEmail } = useAuth()
@@ -39,42 +39,36 @@ export function ResendConfirmation() {
     },
   })
 
-  // Check rate limit on mount and set up timer
   useEffect(() => {
     const checkRateLimit = () => {
       const lastSentStr = localStorage.getItem(RATE_LIMIT_KEY)
-      if (lastSentStr) {
-        const lastSent = parseInt(lastSentStr, 10)
-        const now = Date.now()
-        const timeSinceLastSend = now - lastSent
-        
-        if (timeSinceLastSend < RATE_LIMIT_DURATION) {
-          const remaining = Math.ceil((RATE_LIMIT_DURATION - timeSinceLastSend) / 1000)
-          setRemainingTime(remaining)
-        } else {
-          setRemainingTime(0)
-        }
+      if (!lastSentStr) {
+        setRemainingTime(0)
+        return
       }
+
+      const lastSent = Number.parseInt(lastSentStr, 10)
+      const timeSinceLastSend = Date.now() - lastSent
+
+      if (timeSinceLastSend < RATE_LIMIT_DURATION) {
+        setRemainingTime(Math.ceil((RATE_LIMIT_DURATION - timeSinceLastSend) / 1000))
+        return
+      }
+
+      setRemainingTime(0)
     }
 
     checkRateLimit()
-
-    // Update remaining time every second
-    const interval = setInterval(() => {
-      checkRateLimit()
-    }, 1000)
-
-    return () => clearInterval(interval)
+    const interval = window.setInterval(checkRateLimit, 1000)
+    return () => window.clearInterval(interval)
   }, [])
 
   const onSubmit = async (values: FormValues) => {
-    // Check rate limit
     const lastSentStr = localStorage.getItem(RATE_LIMIT_KEY)
     if (lastSentStr) {
-      const lastSent = parseInt(lastSentStr, 10)
-      const now = Date.now()
-      const timeSinceLastSend = now - lastSent
-      
+      const lastSent = Number.parseInt(lastSentStr, 10)
+      const timeSinceLastSend = Date.now() - lastSent
+
       if (timeSinceLastSend < RATE_LIMIT_DURATION) {
         const remainingSeconds = Math.ceil((RATE_LIMIT_DURATION - timeSinceLastSend) / 1000)
         toast({
@@ -100,13 +94,11 @@ export function ResendConfirmation() {
         return
       }
 
-      // Store the current time for rate limiting
       localStorage.setItem(RATE_LIMIT_KEY, Date.now().toString())
       setRemainingTime(60)
-
       setSuccess(true)
       toast({
-        title: "Email sent!",
+        title: "Email sent",
         description: "Check your inbox for the confirmation link.",
       })
     } catch (error) {
@@ -123,50 +115,44 @@ export function ResendConfirmation() {
 
   if (success) {
     return (
-      <div className="min-h-screen bg-background flex items-center justify-center p-4">
+      <div className="flex min-h-screen items-center justify-center bg-background p-4">
         <Card className="w-full max-w-md border-border">
-          <CardHeader className="text-center space-y-4">
-            <div className="mx-auto w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center">
+          <CardHeader className="space-y-4 text-center">
+            <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-primary/10">
               <CheckCircle2 className="h-6 w-6 text-primary" />
             </div>
             <CardTitle className="text-2xl">Check your email</CardTitle>
             <CardDescription>
-              We've sent a new confirmation link to <strong>{form.getValues("email")}</strong>
+              We've sent a new confirmation link to <strong>{form.getValues("email")}</strong>.
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="rounded-lg border border-border bg-muted/50 p-4 text-sm text-muted-foreground">
-              <p className="mb-2">📧 <strong>What to do next:</strong></p>
-              <ol className="list-decimal list-inside space-y-1 ml-2">
+              <p className="mb-2">
+                <strong>What to do next:</strong>
+              </p>
+              <ol className="ml-2 list-inside list-decimal space-y-1">
                 <li>Check your email inbox</li>
                 <li>Click the confirmation link</li>
-                <li>You'll be redirected to your dashboard</li>
+                <li>You'll be redirected to your GuestPass account</li>
               </ol>
             </div>
 
-            {remainingTime > 0 && (
-              <p className="text-sm text-center text-muted-foreground">
-                You can resend the email again in <strong>{remainingTime}s</strong>
+            {remainingTime > 0 ? (
+              <p className="text-center text-sm text-muted-foreground">
+                You can resend the email again in <strong>{remainingTime}s</strong>.
               </p>
-            )}
+            ) : null}
 
             <div className="flex flex-col gap-2">
-              {remainingTime === 0 && (
-                <Button
-                  variant="outline"
-                  onClick={() => setSuccess(false)}
-                  className="w-full"
-                >
+              {remainingTime === 0 ? (
+                <Button variant="outline" onClick={() => setSuccess(false)} className="w-full">
                   Resend again
                 </Button>
-              )}
-              <Button
-                variant="ghost"
-                onClick={() => navigate("/login")}
-                className="w-full"
-              >
+              ) : null}
+              <Button variant="ghost" onClick={() => navigate("/account/auth")} className="w-full">
                 <ArrowLeft className="mr-2 h-4 w-4" />
-                Back to login
+                Back to sign in
               </Button>
             </div>
           </CardContent>
@@ -176,7 +162,7 @@ export function ResendConfirmation() {
   }
 
   return (
-    <div className="min-h-screen bg-background flex items-center justify-center p-4">
+    <div className="flex min-h-screen items-center justify-center bg-background p-4">
       <Card className="w-full max-w-md border-border">
         <CardHeader className="space-y-2">
           <CardTitle className="text-2xl">Resend confirmation email</CardTitle>
@@ -211,17 +197,13 @@ export function ResendConfirmation() {
                 )}
               />
 
-              {remainingTime > 0 && (
+              {remainingTime > 0 ? (
                 <div className="rounded-lg border border-yellow-500/50 bg-yellow-500/10 p-3 text-sm text-yellow-700 dark:text-yellow-400">
-                  ⏱️ Please wait <strong>{remainingTime} seconds</strong> before resending
+                  Please wait <strong>{remainingTime} seconds</strong> before resending.
                 </div>
-              )}
+              ) : null}
 
-              <Button
-                type="submit"
-                className="w-full"
-                disabled={isSubmitting || remainingTime > 0}
-              >
+              <Button type="submit" className="w-full" disabled={isSubmitting || remainingTime > 0}>
                 {isSubmitting ? (
                   <>
                     <Loader2 className="mr-2 h-4 w-4 animate-spin" />
@@ -232,14 +214,9 @@ export function ResendConfirmation() {
                 )}
               </Button>
 
-              <Button
-                type="button"
-                variant="ghost"
-                onClick={() => navigate("/login")}
-                className="w-full"
-              >
+              <Button type="button" variant="ghost" onClick={() => navigate("/account/auth")} className="w-full">
                 <ArrowLeft className="mr-2 h-4 w-4" />
-                Back to login
+                Back to sign in
               </Button>
             </form>
           </Form>

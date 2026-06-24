@@ -3,6 +3,12 @@
 import { createContext, useContext, useEffect, useMemo, useState, useCallback, type ReactNode } from "react"
 import type { User } from "@supabase/supabase-js"
 import { createBrowserSupabaseClient } from "@/lib/supabase/browser"
+import {
+  hasPermission as checkPermission,
+  normalizePermissions,
+  type UserPermissionKey,
+  type UserPermissions,
+} from "@/lib/user-permissions"
 
 interface AuthContextType {
   user: User | null
@@ -10,6 +16,11 @@ interface AuthContextType {
   displayName: string | null
   hasDisplayName: boolean
   userRole: string | null
+  userPermissions: Record<UserPermissionKey, boolean>
+  canViewArchive: boolean
+  isActive: boolean
+  adminExpiresAt: string | null
+  hasPermission: (permission: UserPermissionKey) => boolean
   refreshUser: () => Promise<void>
   updateDisplayName: (name: string) => Promise<void>
   signInWithOtp: (email: string) => Promise<{ error: string | null }>
@@ -36,7 +47,45 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true)
   const [displayName, setDisplayName] = useState<string | null>(null)
   const [userRole, setUserRole] = useState<string | null>(null)
+  const [userPermissions, setUserPermissions] = useState<Record<UserPermissionKey, boolean>>(
+    normalizePermissions(null, null),
+  )
+  const [canViewArchive, setCanViewArchive] = useState(false)
+  const [isActive, setIsActive] = useState(true)
+  const [adminExpiresAt, setAdminExpiresAt] = useState<string | null>(null)
   const supabase = useMemo(() => createBrowserSupabaseClient(), [])
+
+  const loadOptionalUserAccess = useCallback(async (userId: string, role: string | null) => {
+    try {
+      const { data, error } = await supabase
+        .from("users")
+        .select("permissions, can_view_archive, is_active, admin_expires_at")
+        .eq("id", userId)
+        .maybeSingle()
+
+      if (error) {
+        if (error.code === "42703") {
+          setUserPermissions(normalizePermissions(role, null))
+          setCanViewArchive(false)
+          setIsActive(true)
+          setAdminExpiresAt(null)
+          return
+        }
+        throw error
+      }
+
+      setUserPermissions(normalizePermissions(role, data?.permissions as UserPermissions | null))
+      setCanViewArchive(Boolean(data?.can_view_archive))
+      setIsActive(data?.is_active ?? true)
+      setAdminExpiresAt(data?.admin_expires_at ?? null)
+    } catch (error) {
+      console.error("[auth] loadOptionalUserAccess error", error)
+      setUserPermissions(normalizePermissions(role, null))
+      setCanViewArchive(false)
+      setIsActive(true)
+      setAdminExpiresAt(null)
+    }
+  }, [supabase])
 
   const fetchDisplayName = useCallback(async (userId: string) => {
     try {
@@ -74,6 +123,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setUserRole(userData.role)
         console.log("[auth] User role updated:", userData.role)
       }
+      await loadOptionalUserAccess(userId, userData?.role ?? null)
       
       // Use display_name if available, otherwise fall back to full_name
       return userData?.display_name || userData?.full_name || null
@@ -81,7 +131,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       console.error("[auth] fetchDisplayName unexpected error", error)
       return null
     }
-  }, [supabase])
+  }, [loadOptionalUserAccess, supabase])
 
   const ensureUserProfile = useCallback(async (authUser: User) => {
     console.log("[auth] ensureUserProfile start", authUser.id)
@@ -247,6 +297,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (!sessionUser) {
         setDisplayName(null)
         setUserRole(null)
+        setUserPermissions(normalizePermissions(null, null))
+        setCanViewArchive(false)
+        setIsActive(true)
+        setAdminExpiresAt(null)
         console.log("[auth] User signed out, cleared display name and role")
       }
 
@@ -286,6 +340,36 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       subscription.unsubscribe()
     }
   }, [supabase, ensureUserProfile])
+
+  useEffect(() => {
+    if (!user?.id) {
+      return
+    }
+
+    const channel = supabase
+      .channel(`user-profile-${user.id}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "users",
+          filter: `id=eq.${user.id}`,
+        },
+        () => {
+          fetchDisplayName(user.id)
+            .then((name) => setDisplayName(name))
+            .catch((error) =>
+              console.error("[auth] Failed to refresh user profile from realtime", error),
+            )
+        },
+      )
+      .subscribe()
+
+    return () => {
+      supabase.removeChannel(channel)
+    }
+  }, [fetchDisplayName, supabase, user?.id])
 
   const signInWithOtp = useCallback(async (email: string) => {
     const redirectUrl = import.meta.env.VITE_APP_URL || window.location.origin
@@ -460,6 +544,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser(null)
     setDisplayName(null)
     setUserRole(null)
+    setUserPermissions(normalizePermissions(null, null))
+    setCanViewArchive(false)
+    setIsActive(true)
+    setAdminExpiresAt(null)
     
     // Sign out from Supabase (this will clear localStorage and trigger onAuthStateChange)
     const { error } = await supabase.auth.signOut({ scope: 'local' })
@@ -475,19 +563,44 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const value = useMemo(
     () => {
       const hasDisplayName = displayName !== null && displayName.trim().length > 0
+      const effectiveRole =
+        (() => {
+          const baseRole =
+            userRole ??
+            (typeof user?.app_metadata?.role === "string"
+              ? user.app_metadata.role
+              : null)
+
+          if (
+            baseRole === "admin" &&
+            adminExpiresAt &&
+            new Date(adminExpiresAt).getTime() <= Date.now()
+          ) {
+            return "usher"
+          }
+
+          return baseRole
+        })()
+      const effectivePermissions = normalizePermissions(effectiveRole, userPermissions)
       console.log("[auth] Context value updated:", { 
         hasUser: !!user, 
         loading, 
         displayName, 
         hasDisplayName,
-        userRole
+        userRole: effectiveRole
       })
       return {
         user,
         loading,
         displayName,
         hasDisplayName,
-        userRole,
+        userRole: effectiveRole,
+        userPermissions: effectivePermissions,
+        canViewArchive,
+        isActive,
+        adminExpiresAt,
+        hasPermission: (permission: UserPermissionKey) =>
+          checkPermission(effectiveRole, effectivePermissions, permission),
         refreshUser: loadCurrentUser,
         updateDisplayName,
         signInWithOtp,
@@ -499,7 +612,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         signOut,
       }
     },
-    [user, loading, displayName, userRole, loadCurrentUser, updateDisplayName, signInWithOtp, signInWithPassword, signUpWithPassword, resetPassword, updatePassword, resendConfirmationEmail, signOut],
+    [user, loading, displayName, userRole, userPermissions, canViewArchive, isActive, adminExpiresAt, loadCurrentUser, updateDisplayName, signInWithOtp, signInWithPassword, signUpWithPassword, resetPassword, updatePassword, resendConfirmationEmail, signOut],
   )
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>

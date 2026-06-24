@@ -4,6 +4,11 @@ import { useEffect, useState } from "react"
 import { useNavigate } from "react-router-dom"
 import { createBrowserSupabaseClient } from "@/lib/supabase/browser"
 import { Loader2 } from "lucide-react"
+import {
+  clearPendingPublicAccount,
+  readPendingPublicAccount,
+  writePublicAccount,
+} from "@/lib/public-account"
 
 export function AuthCallback() {
   const navigate = useNavigate()
@@ -38,6 +43,18 @@ export function AuthCallback() {
             }
 
             if (data.user) {
+              const pendingPublicAccount = readPendingPublicAccount()
+              if (pendingPublicAccount) {
+                writePublicAccount({
+                  id: data.user.id,
+                  ...pendingPublicAccount,
+                })
+                clearPendingPublicAccount()
+                console.log("[auth-callback] Public email confirmed successfully, redirecting to public account")
+                setTimeout(() => navigate("/account"), 1000)
+                return
+              }
+
               console.log("[auth-callback] Email confirmed successfully, redirecting to dashboard")
               // Redirect to dashboard after successful email confirmation
               setTimeout(() => navigate("/dashboard"), 1000)
@@ -52,6 +69,17 @@ export function AuthCallback() {
           console.log("[auth-callback] No valid session found")
           setError("Invalid or expired confirmation link.")
           setTimeout(() => navigate("/login"), 3000)
+          return
+        }
+
+        const pendingPublicAccount = readPendingPublicAccount()
+        if (pendingPublicAccount && session.user) {
+          writePublicAccount({
+            id: session.user.id,
+            ...pendingPublicAccount,
+          })
+          clearPendingPublicAccount()
+          navigate("/account")
           return
         }
 

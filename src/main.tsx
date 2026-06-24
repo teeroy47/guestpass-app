@@ -1,11 +1,9 @@
 import React from 'react'
 import { createRoot } from 'react-dom/client'
 import { BrowserRouter } from 'react-router-dom'
-import App from './App'
+import LandingApp from './LandingApp'
 import '@/styles/globals.css'
 import { AuthProvider } from '@/lib/auth-context'
-import { EventsProvider } from '@/lib/events-context'
-import { GuestsProvider } from '@/lib/guests-context'
 
 const container = document.getElementById('root')
 if (!container) throw new Error('Root container not found')
@@ -55,13 +53,9 @@ class ErrorBoundary extends React.Component<
 createRoot(container).render(
   <ErrorBoundary>
     <AuthProvider>
-      <EventsProvider>
-        <GuestsProvider>
-          <BrowserRouter>
-            <App />
-          </BrowserRouter>
-        </GuestsProvider>
-      </EventsProvider>
+      <BrowserRouter>
+        <LandingApp />
+      </BrowserRouter>
     </AuthProvider>
   </ErrorBoundary>,
 )
