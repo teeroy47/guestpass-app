@@ -3,7 +3,7 @@ import { createRoot } from 'react-dom/client'
 import { BrowserRouter } from 'react-router-dom'
 import LandingApp from './LandingApp'
 import '@/styles/globals.css'
-import { AuthProvider } from '@/lib/auth-context'
+import { PublicDemoAuthProvider } from '@/lib/auth-context'
 
 const container = document.getElementById('root')
 if (!container) throw new Error('Root container not found')
@@ -52,10 +52,10 @@ class ErrorBoundary extends React.Component<
 
 createRoot(container).render(
   <ErrorBoundary>
-    <AuthProvider>
+    <PublicDemoAuthProvider>
       <BrowserRouter basename={import.meta.env.BASE_URL === "/" ? undefined : import.meta.env.BASE_URL}>
         <LandingApp />
       </BrowserRouter>
-    </AuthProvider>
+    </PublicDemoAuthProvider>
   </ErrorBoundary>,
 )

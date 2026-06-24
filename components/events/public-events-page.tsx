@@ -12,6 +12,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog"
 import { createBrowserSupabaseClient } from "@/lib/supabase/browser"
+import { hasSupabaseBrowserConfig } from "@/lib/supabase/env"
 import { addCartItem } from "@/lib/cart"
 import { usePublicAccount } from "@/lib/public-account"
 
@@ -187,7 +188,11 @@ function getTicketClasses(event: PublicEvent): TicketClass[] {
 }
 
 export function PublicEventsPage() {
-  const supabase = useMemo(() => createBrowserSupabaseClient(), [])
+  const hasLiveEventBackend = hasSupabaseBrowserConfig()
+  const supabase = useMemo(
+    () => (hasLiveEventBackend ? createBrowserSupabaseClient() : null),
+    [hasLiveEventBackend],
+  )
   const navigate = useNavigate()
   const publicAccount = usePublicAccount()
   const [query, setQuery] = useState("")
@@ -211,6 +216,12 @@ export function PublicEventsPage() {
       setError(null)
 
       try {
+        if (!supabase) {
+          setHasListedEvents(false)
+          setEvents(eventMatchesTerm(demoEvent, term) ? [demoEvent] : [])
+          return
+        }
+
         let request = supabase
           .from("events")
           .select("id,title,description,starts_at,ends_at,venue,status")
@@ -299,6 +310,8 @@ export function PublicEventsPage() {
   }, [hasListedEvents, query, searchEvents])
 
   useEffect(() => {
+    if (!supabase) return
+
     const channel = supabase
       .channel("public-events-search")
       .on(

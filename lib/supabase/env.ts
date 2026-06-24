@@ -79,6 +79,13 @@ export function getSupabaseBrowserConfig() {
   return { supabaseUrl, supabaseAnonKey }
 }
 
+export function hasSupabaseBrowserConfig() {
+  return Boolean(
+    resolveEnvironmentVariable(PUBLIC_SUPABASE_URL_KEYS) &&
+      resolveEnvironmentVariable(PUBLIC_SUPABASE_ANON_KEYS),
+  )
+}
+
 export function getSupabaseServerUrl() {
   return resolveEnvironmentVariable(SERVER_SUPABASE_URL_KEYS, {
     required: true,

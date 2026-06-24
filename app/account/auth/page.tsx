@@ -12,6 +12,7 @@ import {
   usePublicAccount,
   writePublicAccount,
 } from "@/lib/public-account"
+import { hasSupabaseBrowserConfig } from "@/lib/supabase/env"
 
 export default function PublicAccountAuthPage() {
   const { refreshUser, signInWithPassword, signUpWithPassword } = useAuth()
@@ -87,6 +88,17 @@ export default function PublicAccountAuthPage() {
 
       if (password !== confirmPassword) {
         setError("Passwords do not match.")
+        return
+      }
+
+      if (!hasSupabaseBrowserConfig()) {
+        writePublicAccount({
+          id: `public-${Date.now()}`,
+          name,
+          email,
+          phone,
+        })
+        navigate(redirectTo, { replace: true })
         return
       }
 

@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react"
 import { useNavigate } from "react-router-dom"
 import { createBrowserSupabaseClient } from "@/lib/supabase/browser"
+import { hasSupabaseBrowserConfig } from "@/lib/supabase/env"
 import { Loader2 } from "lucide-react"
 import {
   clearPendingPublicAccount,
@@ -17,6 +18,22 @@ export function AuthCallback() {
   useEffect(() => {
     const handleAuthCallback = async () => {
       try {
+        if (!hasSupabaseBrowserConfig()) {
+          const pendingPublicAccount = readPendingPublicAccount()
+          if (pendingPublicAccount) {
+            writePublicAccount({
+              id: `public-${Date.now()}`,
+              ...pendingPublicAccount,
+            })
+            clearPendingPublicAccount()
+            navigate("/account")
+            return
+          }
+
+          navigate("/account/auth")
+          return
+        }
+
         const supabase = createBrowserSupabaseClient()
         
         // Get the hash fragment from the URL (Supabase sends tokens in the hash)
@@ -38,7 +55,7 @@ export function AuthCallback() {
             if (sessionError) {
               console.error("[auth-callback] Session error", sessionError)
               setError("Failed to confirm your email. Please try again.")
-              setTimeout(() => navigate("/login"), 3000)
+              setTimeout(() => navigate("/account/auth"), 3000)
               return
             }
 
@@ -68,7 +85,7 @@ export function AuthCallback() {
         if (!session) {
           console.log("[auth-callback] No valid session found")
           setError("Invalid or expired confirmation link.")
-          setTimeout(() => navigate("/login"), 3000)
+          setTimeout(() => navigate("/account/auth"), 3000)
           return
         }
 
@@ -88,7 +105,7 @@ export function AuthCallback() {
       } catch (err) {
         console.error("[auth-callback] Unexpected error", err)
         setError("Something went wrong. Please try signing in.")
-        setTimeout(() => navigate("/login"), 3000)
+        setTimeout(() => navigate("/account/auth"), 3000)
       }
     }
 
@@ -100,7 +117,7 @@ export function AuthCallback() {
       <div className="min-h-screen flex items-center justify-center bg-background">
         <div className="text-center space-y-4 max-w-md">
           <div className="text-destructive text-lg font-semibold">⚠️ {error}</div>
-          <p className="text-sm text-muted-foreground">Redirecting you to the login page...</p>
+          <p className="text-sm text-muted-foreground">Redirecting you to sign in...</p>
         </div>
       </div>
     )

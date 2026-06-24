@@ -34,12 +34,38 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined)
 
+const offlineAuthValue: AuthContextType = {
+  user: null,
+  loading: false,
+  displayName: null,
+  hasDisplayName: false,
+  userRole: null,
+  userPermissions: normalizePermissions(null, null),
+  canViewArchive: false,
+  isActive: true,
+  adminExpiresAt: null,
+  hasPermission: () => false,
+  refreshUser: async () => undefined,
+  updateDisplayName: async () => undefined,
+  signInWithOtp: async () => ({ error: "Supabase is not configured for this public demo." }),
+  signInWithPassword: async () => ({ error: "Use the demo attendee credentials for now." }),
+  signUpWithPassword: async () => ({ error: null }),
+  resetPassword: async () => ({ error: "Password reset is not available in this public demo." }),
+  updatePassword: async () => ({ error: "Password updates are not available in this public demo." }),
+  resendConfirmationEmail: async () => ({ error: null }),
+  signOut: async () => undefined,
+}
+
 export function useAuth() {
   const context = useContext(AuthContext)
   if (context === undefined) {
     throw new Error("useAuth must be used within an AuthProvider")
   }
   return context
+}
+
+export function PublicDemoAuthProvider({ children }: { children: ReactNode }) {
+  return <AuthContext.Provider value={offlineAuthValue}>{children}</AuthContext.Provider>
 }
 
 export function AuthProvider({ children }: { children: ReactNode }) {
