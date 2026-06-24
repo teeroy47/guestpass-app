@@ -82,7 +82,7 @@ export function getCartSubtotal() {
 }
 
 export function useCartItems() {
-  const [items, setItems] = useState<CartItem[]>([])
+  const [items, setItems] = useState<CartItem[]>(() => readCartItems())
 
   useEffect(() => {
     const updateItems = () => setItems(readCartItems())
@@ -101,7 +101,7 @@ export function useCartItems() {
 }
 
 export function useCartCount() {
-  const [count, setCount] = useState(0)
+  const [count, setCount] = useState(() => getCartCount())
 
   useEffect(() => {
     const updateCount = () => setCount(getCartCount())

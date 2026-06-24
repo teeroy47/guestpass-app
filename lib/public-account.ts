@@ -114,7 +114,7 @@ export function signOutPublicAccount() {
 }
 
 export function usePublicAccount() {
-  const [account, setAccount] = useState<PublicAccount | null>(null)
+  const [account, setAccount] = useState<PublicAccount | null>(() => readPublicAccount())
 
   useEffect(() => {
     const updateAccount = () => setAccount(readPublicAccount())
