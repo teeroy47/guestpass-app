@@ -215,7 +215,7 @@ function AnimatedCounter({ to, suffix = "" }: { to: number; suffix?: string }) {
   )
 }
 
-function QrPreview() {
+function QrPreview({ className }: { className?: string }) {
   const cells = [
     "1111111010101111111",
     "1000001011101000001",
@@ -238,7 +238,7 @@ function QrPreview() {
   ]
 
   return (
-    <div className="rounded-[1.6rem] border border-white/10 bg-black p-4 text-white shadow-[0_22px_60px_rgba(0,0,0,0.22)]">
+    <div className={cn("rounded-[1.6rem] border border-white/10 bg-black p-4 text-white shadow-[0_22px_60px_rgba(0,0,0,0.22)]", className)}>
       <div className="mb-3 flex items-center justify-between text-[10px] uppercase tracking-[0.18em] text-zinc-400">
         <span>QR Protocol</span>
         <span>Encrypted</span>
@@ -260,16 +260,18 @@ function QrPreview() {
 }
 
 function ConsolePreview({ compact = false }: { compact?: boolean }) {
+  const logoSrc = `${import.meta.env.BASE_URL}guestpass-logo.png`
+
   return (
-    <div className="relative mx-auto w-full max-w-4xl">
-      <div className="absolute -inset-10 -z-10 rounded-[3rem] bg-[radial-gradient(circle_at_50%_0%,rgba(0,0,0,0.12),transparent_48%)] blur-2xl" />
-      <div className="pointer-events-none absolute inset-x-8 -bottom-8 z-0 h-24 rounded-full bg-[radial-gradient(ellipse_at_center,rgba(0,0,0,0.18),rgba(0,0,0,0.06)_42%,transparent_72%)] blur-2xl" />
-      <div className="relative z-10 overflow-hidden rounded-[2rem] border border-zinc-200 bg-white shadow-[0_24px_80px_rgba(0,0,0,0.08)]">
-        <div className={cn("grid lg:grid-cols-[188px_1fr]", compact ? "min-h-[440px]" : "min-h-[560px]")}>
+    <div className="relative mx-auto w-full max-w-4xl px-0">
+      <div className="absolute -inset-4 -z-10 rounded-[2rem] bg-[radial-gradient(circle_at_50%_0%,rgba(0,0,0,0.10),transparent_52%)] blur-xl sm:-inset-10 sm:rounded-[3rem] sm:blur-2xl" />
+      <div className="pointer-events-none absolute inset-x-8 -bottom-8 z-0 h-20 rounded-full bg-[radial-gradient(ellipse_at_center,rgba(0,0,0,0.14),rgba(0,0,0,0.05)_42%,transparent_72%)] blur-2xl" />
+      <div className="relative z-10 mx-auto w-full max-w-[430px] overflow-hidden rounded-[1.75rem] border border-zinc-200 bg-white shadow-[0_24px_80px_rgba(0,0,0,0.08)] sm:max-w-4xl lg:rounded-[2rem]">
+        <div className={cn("grid lg:grid-cols-[188px_1fr]", compact ? "lg:min-h-[440px]" : "lg:min-h-[560px]")}>
           <aside className="hidden border-r border-zinc-200 bg-zinc-50/80 p-5 lg:block">
             <div className="mb-8 flex items-center gap-2">
               <span className="flex h-8 w-8 items-center justify-center rounded-lg border border-zinc-200 bg-white">
-                <img src="/guestpass-logo.png" alt="" className="h-6 w-6 object-contain" />
+                <img src={logoSrc} alt="" className="h-6 w-6 object-contain" />
               </span>
               <span className="text-sm font-black tracking-tight">GuestPass</span>
             </div>
@@ -293,7 +295,7 @@ function ConsolePreview({ compact = false }: { compact?: boolean }) {
             <div className="mb-5 flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
               <div>
                 <div className="flex flex-wrap items-center gap-2">
-                  <h2 className="text-2xl font-black tracking-tight text-black">Founders Gala</h2>
+                  <h2 className="text-2xl font-black tracking-tight text-black sm:text-3xl">Founders Gala</h2>
                   <span className="inline-flex items-center gap-1 rounded-full bg-black px-2.5 py-1 text-[11px] font-semibold text-white">
                     <span className="h-1.5 w-1.5 rounded-full bg-white" />
                     Live Event
@@ -304,13 +306,13 @@ function ConsolePreview({ compact = false }: { compact?: boolean }) {
                   May 24, 2026 - 6:00 PM - 11:00 PM
                 </p>
               </div>
-              <Button variant="outline" size="sm" className="h-10 rounded-xl">
+              <Button variant="outline" size="sm" className="h-11 w-full rounded-xl sm:w-auto">
                 View Event Details
               </Button>
             </div>
 
             <div className="grid gap-3 xl:grid-cols-[190px_1fr_190px]">
-              <QrPreview />
+              <QrPreview className="mx-auto w-full max-w-[260px] sm:max-w-none" />
 
               <div className="grid grid-cols-2 gap-3">
                 {consoleMetrics.map((metric, index) => (
@@ -375,7 +377,7 @@ function ConsolePreview({ compact = false }: { compact?: boolean }) {
               </div>
             </div>
 
-            <div className="mt-3 overflow-hidden rounded-2xl border border-zinc-200 bg-white">
+            <div className="mt-3 hidden overflow-hidden rounded-2xl border border-zinc-200 bg-white sm:block">
               <div className="flex items-center justify-between border-b border-zinc-100 px-4 py-3">
                 <p className="text-sm font-bold">Live Scan Activity</p>
                 <span className="text-[11px] font-semibold text-zinc-500">Synced 2s ago</span>
@@ -444,16 +446,16 @@ function StoryText({
     <motion.article
       id={section.id}
       className={cn(
-        "relative scroll-mt-28 py-4 pl-10 sm:pl-14 lg:py-5",
+        "relative scroll-mt-28 py-3 pl-7 sm:pl-14 lg:py-5",
         isRoot ? "pb-5 lg:pb-6" : "",
       )}
-      initial={{ opacity: 0, y: reduceMotion ? 0 : 18 }}
-      whileInView={{ opacity: 1, y: 0 }}
-      viewport={{ once: false, amount: 0.28, margin: "-8% 0px -8% 0px" }}
-      transition={{ duration: reduceMotion ? 0 : 0.32, ease: [0.22, 1, 0.36, 1] }}
+      initial={false}
+      whileInView={{ opacity: 1 }}
+      viewport={{ once: false, amount: 0.12, margin: "-4% 0px -4% 0px" }}
+      transition={{ duration: reduceMotion ? 0 : 0.22, ease: [0.22, 1, 0.36, 1] }}
       style={{ y, scale }}
     >
-      <span className="absolute left-3 top-9 h-4 w-4 rounded-full border border-zinc-300 bg-white shadow-[0_0_0_6px_rgba(244,244,245,0.95)] sm:left-4" />
+      <span className="absolute left-1.5 top-9 h-4 w-4 rounded-full border border-zinc-300 bg-white shadow-[0_0_0_6px_rgba(244,244,245,0.95)] sm:left-4" />
       <span className="absolute left-[19px] top-9 hidden h-px w-7 bg-zinc-200 sm:block" />
       <div
         className={cn(
@@ -461,7 +463,7 @@ function StoryText({
           isRoot ? "p-6 sm:p-7" : "p-5 sm:p-6",
         )}
       >
-        <div className="grid gap-6 xl:grid-cols-[minmax(0,0.78fr)_minmax(480px,1fr)] xl:items-stretch">
+        <div className="grid gap-5 xl:grid-cols-[minmax(0,0.78fr)_minmax(0,1fr)] xl:items-stretch">
           <div className="flex min-w-0 flex-col justify-between">
             <div className="flex items-start gap-5">
               <span className={cn("flex shrink-0 items-center justify-center rounded-2xl bg-black text-white", isRoot ? "h-12 w-12" : "h-11 w-11")}>
@@ -493,7 +495,7 @@ function StoryText({
               </div>
             </div>
           </div>
-          <div className="overflow-hidden rounded-[1.5rem] border border-zinc-200 bg-zinc-50/80">
+          <div className="min-w-0 overflow-hidden rounded-[1.5rem] border border-zinc-200 bg-zinc-50/80">
             <StoryProductScreen section={section} />
           </div>
         </div>
@@ -504,8 +506,8 @@ function StoryText({
 
 function StoryInvitationScreen() {
   return (
-    <div className="grid min-h-[420px] content-center gap-5 p-6 sm:grid-cols-[220px_1fr]">
-      <QrPreview />
+    <div className="grid min-h-[360px] content-center gap-4 p-4 sm:min-h-[420px] sm:grid-cols-[220px_1fr] sm:p-6">
+      <QrPreview className="mx-auto w-full max-w-[240px] sm:max-w-none" />
       <div className="space-y-5">
         <div className="rounded-2xl border border-zinc-200 bg-white p-4">
           <div className="flex items-center justify-between">
@@ -546,8 +548,8 @@ function StoryInvitationScreen() {
 
 function StoryGuestScreen() {
   return (
-    <div className="min-h-[420px] p-5">
-      <div className="mx-auto grid max-w-3xl gap-4 lg:grid-cols-2">
+    <div className="min-h-[360px] p-4 sm:min-h-[420px] sm:p-5">
+      <div className="mx-auto grid w-full max-w-[380px] gap-4 lg:max-w-3xl lg:grid-cols-2">
         <CheckInResultMini
           variant="success"
           initials="T"
@@ -765,7 +767,7 @@ function CheckInResultMini({
   return (
     <div
       className={cn(
-        "rounded-[1.65rem] border bg-white p-4 shadow-[0_18px_55px_rgba(0,0,0,0.06)]",
+        "min-w-0 overflow-hidden rounded-[1.65rem] border bg-white p-4 shadow-[0_18px_55px_rgba(0,0,0,0.06)]",
         isDuplicate ? "border-orange-200" : "border-emerald-200",
       )}
     >
@@ -775,7 +777,7 @@ function CheckInResultMini({
           Already Checked In
         </div>
       )}
-      <div className="flex items-center gap-3">
+      <div className="flex min-w-0 items-center gap-3">
         <span
           className={cn(
             "flex h-14 w-14 shrink-0 items-center justify-center rounded-full text-lg font-medium text-white ring-4",
@@ -786,8 +788,8 @@ function CheckInResultMini({
         >
           {initials}
         </span>
-        <div className="min-w-0">
-          <p className="truncate text-lg font-black tracking-[-0.03em] text-zinc-950">{name}</p>
+        <div className="min-w-0 flex-1">
+          <p className="text-balance break-words text-lg font-black leading-tight tracking-[-0.03em] text-zinc-950">{name}</p>
           <span
             className={cn(
               "mt-1 inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-bold",
@@ -809,7 +811,7 @@ function CheckInResultMini({
           </div>
           <div className="flex items-center gap-2">
             <UserRound className={cn("h-4 w-4", isDuplicate ? "text-zinc-400" : "text-emerald-600")} />
-            <span>
+            <span className="min-w-0 break-words">
               Checked in by <strong className="text-zinc-700">{checkedInBy}</strong>
             </span>
           </div>
@@ -830,10 +832,10 @@ function CheckInResultMini({
 
 function StoryScanScreen() {
   return (
-    <div className="min-h-[420px] p-5">
-      <div className="mx-auto grid max-w-xl gap-4 sm:grid-cols-2 sm:items-center">
+    <div className="min-h-[360px] p-4 sm:min-h-[420px] sm:p-5">
+      <div className="mx-auto grid w-full max-w-[300px] gap-4 sm:max-w-xl sm:grid-cols-2 sm:items-center">
         <ScannerPhoneFrame title="Ready scanner" accent="neutral">
-          <div className="flex min-h-[470px] flex-col bg-black text-white">
+          <div className="flex min-h-[430px] flex-col bg-black text-white sm:min-h-[470px]">
             <ScannerTopBar checkedIn="0 / 0 checked in" />
             <div className="flex flex-1 flex-col items-center justify-center px-6 text-center">
               <span className="flex h-20 w-20 items-center justify-center rounded-full bg-white/5 text-zinc-700">
@@ -853,7 +855,7 @@ function StoryScanScreen() {
         </ScannerPhoneFrame>
 
         <ScannerPhoneFrame title="Active scanner" accent="active" className="lg:scale-[1.04]">
-          <div className="flex min-h-[500px] flex-col bg-black text-white">
+          <div className="flex min-h-[440px] flex-col bg-black text-white sm:min-h-[500px]">
             <ScannerTopBar checkedIn="2,391 checked in" />
             <div className="flex flex-1 flex-col justify-center px-5">
               <div className="relative mx-auto aspect-square w-full max-w-[250px] rounded-[2rem] bg-gradient-to-br from-zinc-950 via-red-950 to-red-700 shadow-[0_0_65px_rgba(127,29,29,0.28)]">

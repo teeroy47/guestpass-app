@@ -44,11 +44,13 @@ const accountNavigationData: NavigationSection[] = [
 ]
 
 function GuestPassLogo() {
+  const logoSrc = `${import.meta.env.BASE_URL}guestpass-logo.png`
+
   return (
     <Link to="/" className="flex items-center gap-3" aria-label="GuestPass home">
       <span className="flex h-10 w-10 items-center justify-center overflow-hidden rounded-xl border border-zinc-200 bg-white shadow-sm">
         <img
-          src="/guestpass-logo.png"
+          src={logoSrc}
           alt=""
           className="h-8 w-8 object-contain"
           loading="eager"
@@ -205,9 +207,11 @@ const Navbar = () => {
             )}
           </div>
 
-          <div className="lg:hidden">
+          <div className="flex items-center gap-2 lg:hidden">
+            <ProfileButton signedIn={Boolean(publicAccount)} />
+            <CartButton count={cartCount} />
             <DropdownMenu open={isOpen} onOpenChange={setIsOpen}>
-              <DropdownMenuTrigger className="flex cursor-pointer items-center justify-center rounded-full border border-border bg-background p-2 outline-none transition-colors">
+              <DropdownMenuTrigger className="flex h-10 w-10 cursor-pointer items-center justify-center rounded-full border border-border bg-background p-2 outline-none transition-colors focus-visible:ring-2 focus-visible:ring-black focus-visible:ring-offset-2">
                 <Menu size={20} />
                 <span className="sr-only">Menu</span>
               </DropdownMenuTrigger>

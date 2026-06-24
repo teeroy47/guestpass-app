@@ -41,6 +41,7 @@ export const socialLinks = [
 
 export function SiteFooter() {
   const currentYear = new Date().getFullYear()
+  const logoSrc = `${import.meta.env.BASE_URL}guestpass-logo.png`
 
   return (
     <footer className="border-t border-zinc-200 bg-white">
@@ -48,7 +49,7 @@ export function SiteFooter() {
         <div className="flex flex-col justify-between gap-6 md:flex-row md:items-center">
           <Link to="/" className="inline-flex items-center gap-3">
             <span className="flex h-10 w-10 items-center justify-center rounded-xl border border-zinc-200 bg-white">
-              <img src="/guestpass-logo.png" alt="" className="h-7 w-7 object-contain" />
+              <img src={logoSrc} alt="" className="h-7 w-7 object-contain" />
             </span>
             <span className="text-lg font-black tracking-tight text-black">GuestPass</span>
           </Link>
